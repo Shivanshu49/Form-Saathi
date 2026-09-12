@@ -1,0 +1,15 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Nirmala UI", "Noto Sans Devanagari", "Mangal", sans-serif;
+}
+
+html {
+  color-scheme: light;
+  font-size: 18px;
+}
+
+body {
+  margin: 0;
+  background: #faf7ef;
+}

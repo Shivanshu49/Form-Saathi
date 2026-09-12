@@ -1,0 +1,29 @@
+{
+  "name": "@form-saathi/extension",
+  "description": "सरकारी फ़ॉर्म समझने, नेविगेट करने और समीक्षा करने में सहायता। विकास संस्करण।",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "wxt --browser chrome",
+    "build": "wxt build --browser chrome --mv3",
+    "zip": "wxt zip --browser chrome --mv3",
+    "typecheck": "wxt prepare && tsc --noEmit",
+    "prepare": "wxt prepare"
+  },
+  "dependencies": {
+    "@form-saathi/contracts": "0.1.0",
+    "@form-saathi/rules": "0.1.0",
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.1.0",
+    "@tailwindcss/vite": "4.3.3",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@wxt-dev/module-react": "1.2.2",
+    "tailwindcss": "4.3.3",
+    "wxt": "0.21.4"
+  }
+}

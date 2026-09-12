@@ -1,0 +1,29 @@
+{
+  "name": "@form-saathi/api",
+  "version": "0.1.0",
+  "description": "Form Saathi API",
+  "private": true,
+  "license": "UNLICENSED",
+  "type": "module",
+  "scripts": {
+    "build": "nest build --builder tsc",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "dev": "node --env-file-if-exists=../../.env --run start:watch",
+    "start:watch": "nest start --watch --builder tsc",
+    "start": "node --env-file-if-exists=../../.env dist/main.js"
+  },
+  "dependencies": {
+    "@form-saathi/contracts": "0.1.0",
+    "@form-saathi/rules": "0.1.0",
+    "@nestjs/common": "12.0.1",
+    "@nestjs/core": "12.0.1",
+    "@nestjs/platform-express": "12.0.1",
+    "reflect-metadata": "0.2.2",
+    "rxjs": "^7.8.1",
+    "zod": "4.6.2"
+  },
+  "devDependencies": {
+    "@nestjs/cli": "12.0.0",
+    "@types/express": "^5.0.0"
+  }
+}

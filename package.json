@@ -1,0 +1,37 @@
+{
+  "name": "form-saathi",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=24.21.0 <25", "npm": ">=11.19.0 <12" },
+  "packageManager": "npm@11.19.0",
+  "workspaces": ["packages/contracts", "packages/rules", "apps/api", "apps/extension"],
+  "scripts": {
+    "postinstall": "npm run build:shared && npm run prepare --workspace @form-saathi/extension",
+    "dev": "npm run build:shared && concurrently --kill-others --names shared,api,extension \"npm:dev:shared\" \"npm:dev:api\" \"npm:dev:extension\"",
+    "dev:shared": "tsc -b packages/contracts packages/rules --watch --preserveWatchOutput",
+    "dev:api": "npm run dev --workspace @form-saathi/api",
+    "dev:extension": "npm run dev --workspace @form-saathi/extension",
+    "build:shared": "tsc -b packages/contracts packages/rules",
+    "build": "npm run build:shared && npm run build --workspace @form-saathi/api && npm run build --workspace @form-saathi/extension",
+    "typecheck": "npm run build:shared && npm run typecheck --workspaces && npm run build --workspace @form-saathi/api && tsc --noEmit -p tsconfig.tools.json",
+    "lint": "oxlint --deny-warnings",
+    "test": "npm run test:unit && npm run test:integration",
+    "test:unit": "npm run build:shared && vitest run packages",
+    "test:integration": "npm run build:shared && npm run build --workspace @form-saathi/api && vitest run tests/api.integration.test.ts",
+    "test:e2e": "npm run build && playwright test"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
+    "@playwright/test": "1.63.0",
+    "@types/node": "^24.0.0",
+    "concurrently": "10.0.5",
+    "oxlint": "1.82.0",
+    "typescript": "6.0.3",
+    "vite": "8.3.0",
+    "vitest": "5.0.0"
+  },
+  "overrides": {
+    "@nestjs/platform-express": { "multer": "2.3.0" }
+  }
+}
