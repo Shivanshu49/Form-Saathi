@@ -15,6 +15,7 @@ const session: Session = {
   taskCompleted: true,
   durationSeconds: 600,
   assistanceEvents: 2,
+  unclearWording: 0,
   captchaBlockers: 0,
   outcome: 'completed',
 };
@@ -30,6 +31,7 @@ describe('pilot session records', () => {
       { ...session, name: 'KAVYA SAIN' },
       { ...session, enteredValue: '226001' },
       { ...session, notes: 'said 15/08/2004' },
+      { ...session, unclearWording: 'the date message' },
       { ...session, remainingErrors: 6 },
       { ...session, condition: 'A' },
       { ...session, condition: 'A', missedErrors: null, taskCompleted: false },
@@ -55,15 +57,15 @@ describe('pilot report', () => {
   it('aggregates per condition, keeping CAPTCHA blockers separate', () => {
     const sessions: Session[] = [
       session,
-      { ...session, participant: 'P02', orderPosition: 2, remainingErrors: 3, durationSeconds: 900, captchaBlockers: 1 },
+      { ...session, participant: 'P02', orderPosition: 2, remainingErrors: 3, durationSeconds: 900, captchaBlockers: 1, unclearWording: 2 },
       { ...session, participant: 'P01', condition: 'A', orderPosition: 2, missedErrors: null, remainingErrors: 2, taskCompleted: false, outcome: 'time-limit' },
     ];
     const [a, b, c] = summarize(sessions);
-    expect(b).toMatchObject({ sessions: 2, participants: 2, completed: 2, meanDurationSeconds: 750, meanRemainingErrors: 2, meanMissedErrors: 0, captchaBlockers: 1, byOrderPosition: { 1: 1, 2: 1, 3: 0 } });
+    expect(b).toMatchObject({ sessions: 2, participants: 2, completed: 2, meanDurationSeconds: 750, meanRemainingErrors: 2, meanMissedErrors: 0, unclearWording: 2, captchaBlockers: 1, byOrderPosition: { 1: 1, 2: 1, 3: 0 } });
     expect(a).toMatchObject({ sessions: 1, completed: 0, meanMissedErrors: null, meanRemainingErrors: 2 });
     expect(c).toMatchObject({ sessions: 0, meanDurationSeconds: null });
     const report = renderReport(sessions, '2026-09-12');
-    expect(report).toContain('| B | 2 | 2 | 2 | 750 | 2 | 0 | 0 | 4 | 1 |');
+    expect(report).toContain('| B | 2 | 2 | 2 | 750 | 2 | 0 | 0 | 4 | 2 | 1 |');
     expect(report).toContain('| time-limit | 1 |');
   });
 });

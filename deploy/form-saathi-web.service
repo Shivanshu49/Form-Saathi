@@ -1,0 +1,26 @@
+[Unit]
+Description=Form Saathi companion website (Next.js, loopback only; TLS terminates in Caddy)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=form-saathi
+Group=form-saathi
+WorkingDirectory=/opt/form-saathi/current
+# NEXT_PUBLIC_PRACTICE_ORIGIN is a build-time value: set it when running
+# `npm run build:web`, not here. The results page reads studies/results/ at
+# request time, so it needs no configuration.
+Environment=PORT=3100
+Environment=HOSTNAME=127.0.0.1
+ExecStart=/usr/local/bin/npm run start --workspace @form-saathi/web
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/form-saathi/current/apps/web/.next
+
+[Install]
+WantedBy=multi-user.target

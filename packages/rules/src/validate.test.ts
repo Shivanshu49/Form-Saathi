@@ -3,6 +3,8 @@ import { eciPack, nspPack, type RulePack } from './packs.js';
 import { summarizeReview } from './review.js';
 import {
   calendarProblem,
+  formatDate,
+  localToday,
   normalizeDigits,
   validateSnapshot,
   validateWithPack,
@@ -376,5 +378,81 @@ describe('what is never checked', () => {
     }
     expect(run(nspComplete(), 'KAVYA SAIN').find((result) => result.ruleId === 'live-testing-unverified')?.severity)
       .toBe('unchecked');
+  });
+});
+
+describe('date of birth scope', () => {
+  const today = { year: 2026, month: 9, day: 12 };
+
+  function dob(value: string, extra: Partial<ValidationField> = {}): ValidationResult[] {
+    const fields = eciIssues().map((current) => (current.key === 'eci-dob' ? { ...current, value, ...extra } : current));
+    return validateSnapshot({ origin: PRACTICE, fields, gaps: [], reference: { englishName: 'ARUN DEV' }, today })
+      .filter((result) => result.fieldId === 'id-eci-dob');
+  }
+  const errors = (results: ValidationResult[]) => bySeverity(results, 'error').map((result) => result.ruleId);
+
+  it('accepts today and rejects tomorrow against an injected clock', () => {
+    expect(errors(dob('12/09/2026'))).toEqual([]);
+    expect(errors(dob('13/09/2026'))).toEqual(['date-future']);
+    expect(dob('13/09/2026')[0]?.message).toContain('12/09/2026');
+    expect(errors(dob('01/01/2027'))).toEqual(['date-future']);
+    expect(errors(dob('31/12/2025'))).toEqual([]);
+    // The boundary moves with the reference date, never with the machine clock.
+    const fields = eciIssues().map((current) => (current.key === 'eci-dob' ? { ...current, value: '13/09/2026' } : current));
+    const later = validateSnapshot({ origin: PRACTICE, fields, gaps: [], reference: { englishName: '' }, today: { year: 2026, month: 9, day: 13 } });
+    expect(later.some((result) => result.ruleId === 'date-future')).toBe(false);
+  });
+
+  it('rejects year zero and impossible dates, and accepts leap days', () => {
+    expect(errors(dob('01/01/0000'))).toEqual(['date-calendar']);
+    expect(dob('01/01/0000')[0]?.message).toContain('वर्ष 0');
+    expect(errors(dob('29/02/2024'))).toEqual([]);
+    expect(errors(dob('29/02/2023'))).toEqual(['date-calendar']);
+    expect(errors(dob('31/02/2000'))).toEqual(['date-calendar']);
+    expect(errors(dob('15/13/2000'))).toEqual(['date-calendar']);
+    expect(errors(dob('2000-08-15'))).toEqual(['date-format']);
+    expect(calendarProblem('01/01/0000')).toEqual({ kind: 'year' });
+  });
+
+  it('reads native date values and enforces only the bounds the control declares', () => {
+    const native = { constraints: { control: 'date', min: '1900-01-01', max: '2026-09-12' } };
+    expect(errors(dob('2004-08-15', native))).toEqual([]);
+    expect(errors(dob('2004-02-29', native))).toEqual([]);
+    expect(errors(dob('2026-09-12', native))).toEqual([]);
+    expect(errors(dob('2026-09-13', native))).toEqual(['date-future']);
+    expect(errors(dob('1899-12-31', native))).toEqual(['date-bounds']);
+    expect(dob('1899-12-31', native)[0]?.message).toContain('01/01/1900');
+    expect(errors(dob('0000-01-01', native))).toEqual(['date-calendar']);
+    expect(errors(dob('15/08/2004', native))).toEqual(['date-format']);
+    expect(errors(dob('2004-08-15', { constraints: { control: 'date', min: null, max: '2000-01-01' } }))).toEqual(['date-bounds']);
+    // A text input has no native bounds, whatever attributes the page put on it.
+    expect(errors(dob('31/12/1899', { constraints: { control: 'text', min: '1900-01-01', max: null } }))).toEqual([]);
+    expect(calendarProblem('2004-08-15', 'date')).toBeNull();
+    expect(calendarProblem('2004-08-15')).toEqual({ kind: 'format' });
+  });
+
+  it('separates date validity from eligibility, which is never decided', () => {
+    const results = validateSnapshot({ origin: PRACTICE, fields: eciIssues(), gaps: [], reference: { englishName: '' }, today });
+    const note = results.find((result) => result.ruleId === 'dob-eligibility-unchecked');
+    expect(note?.severity).toBe('unchecked');
+    expect(note?.fieldId).toBeNull();
+    expect(note?.message).toContain('न्यूनतम या अधिकतम आयु नहीं');
+    expect(summarizeReview([note!], [], []).permanentLimits).toBe(1);
+    // Born today or in year 1: valid dates, and no age judgement either way.
+    expect(errors(dob('12/09/2026'))).toEqual([]);
+    expect(errors(dob('01/01/0001'))).toEqual([]);
+    expect(dob('12/09/2026').some((result) => /आयु|पात्रता/.test(result.message) && result.severity === 'error')).toBe(false);
+    // A page without a date-of-birth field carries no such note.
+    const noDob = validateSnapshot({ origin: PRACTICE, fields: eciIssues().filter((current) => current.key !== 'eci-dob'), gaps: [], reference: { englishName: '' }, today });
+    expect(noDob.some((result) => result.ruleId === 'dob-eligibility-unchecked')).toBe(false);
+  });
+
+  it('defaults to the local calendar date of the machine, with no time-zone conversion', () => {
+    expect(localToday(new Date(2026, 8, 12, 23, 59, 59))).toEqual({ year: 2026, month: 9, day: 12 });
+    expect(localToday(new Date(2026, 0, 1, 0, 0, 0))).toEqual({ year: 2026, month: 1, day: 1 });
+    expect(formatDate({ year: 1, month: 1, day: 1 })).toBe('01/01/0001');
+    const fields = eciIssues().map((current) => (current.key === 'eci-dob' ? { ...current, value: '01/01/9999' } : current));
+    const results = validateSnapshot({ origin: PRACTICE, fields, gaps: [], reference: { englishName: '' } });
+    expect(results.find((result) => result.fieldId === 'id-eci-dob' && result.severity === 'error')?.ruleId).toBe('date-future');
   });
 });

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { healthResponseSchema, type FormField, type FormSnapshot } from '@form-saathi/contracts';
 import {
   acknowledgmentState,
@@ -14,6 +14,7 @@ import {
 import { API_ORIGIN } from '../../config';
 import { loadSession, saveSession, type Session } from './api';
 import { fieldValue, metaText, noField, spokenText } from './fields';
+import { relocate } from './relocate';
 import { Review, severityText, spokenReview, type AckState } from './Review';
 import { CloudHelp, ServiceAccess, SpeechAssist } from './SpeechAssist';
 import { panelTabId, useFormReader, type Connection } from './useFormReader';
@@ -31,6 +32,12 @@ const workflowText = {
 };
 const returnRoute = 'पेज पर जाने के बाद पैनल पर लौटने के लिए F6 दबाएँ, या Alt+Shift+F से फ़ॉर्म साथी फिर खोलें।';
 const staleNotice = 'फ़ॉर्म बदल गया: पिछली स्वीकृति अमान्य है। समीक्षा फिर पढ़ें और फिर स्वीकृति दें।';
+// The page replaced or removed the current control and no stand-in is certain:
+// the person chooses again, and nothing in the page is focused on a guess.
+const relocationText = {
+  ambiguous: 'पेज ने मौजूदा फ़ील्ड को बदल दिया, और एक जैसे कई फ़ील्ड होने से उसकी जगह तय नहीं हो सकी। सूची से फ़ील्ड फिर चुनें; पेज में फ़ोकस नहीं बदला गया।',
+  removed: 'मौजूदा फ़ील्ड पेज से हट गया। सूची से कोई और फ़ील्ड चुनें; पेज में फ़ोकस नहीं बदला गया।',
+};
 
 const button = 'min-h-12 rounded-md border-2 border-teal-950 px-3 py-2 font-bold hover:bg-stone-200 focus-visible:outline-3 focus-visible:outline-offset-4 focus-visible:outline-teal-900 aria-disabled:border-stone-500 aria-disabled:text-stone-600';
 const primaryButton = 'min-h-12 w-full rounded-md border-2 border-teal-950 bg-teal-900 px-4 py-3 font-bold text-white hover:bg-teal-950 focus-visible:outline-3 focus-visible:outline-offset-4 focus-visible:outline-teal-900 aria-disabled:cursor-wait';
@@ -38,8 +45,8 @@ const primaryButton = 'min-h-12 w-full rounded-md border-2 border-teal-950 bg-te
 // The panel document is opened for one tab and stays with it.
 const tabId = panelTabId();
 
-type Selection = { documentId: string; fieldId: string | null; revealed: ReadonlySet<string> };
-const NOTHING_SELECTED: Selection = { documentId: '', fieldId: null, revealed: new Set() };
+type Selection = { fieldId: string | null; revealed: ReadonlySet<string> };
+const NOTHING_SELECTED: Selection = { fieldId: null, revealed: new Set() };
 
 function connectionText(connection: Connection): string {
   switch (connection.state) {
@@ -111,6 +118,9 @@ export default function App() {
   const [acknowledging, setAcknowledging] = useState(false);
   const [service, setService] = useState<keyof typeof serviceText>('idle');
   const [session, setSession] = useState<Session>({ token: '', consent: false });
+  // The document whose reference, acknowledgment, selection, revealed values
+  // and announcement are currently held, with the last field list seen of it.
+  const [owned, setOwned] = useState<{ documentId: string | null; fields: FormField[] }>({ documentId: null, fields: [] });
 
   // Stop speaking if the panel goes away; nothing may talk over a screen reader.
   useEffect(() => () => { if ('tts' in chrome) chrome.tts.stop(); }, []);
@@ -122,8 +132,37 @@ export default function App() {
   // A new page, document or field count is a new situation, so the status line
   // returns to describing the page instead of repeating an old announcement.
   const situation = snapshot ? `${snapshot.documentId}:${fields.length}` : connection.state;
-  const active = snapshot && selection.documentId === snapshot.documentId ? selection : NOTHING_SELECTED;
-  const currentIndex = Math.max(0, fields.findIndex((field) => field.fieldId === active.fieldId));
+  const revision = snapshot ? revisionOf(snapshot, reference) : '';
+
+  // Everything document-owned ends with its document. State is adjusted during
+  // render, React's way of reacting to a changed input, so no render commits
+  // and no delayed callback can revive a reference, acknowledgment, selection,
+  // revealed value or announcement that belonged to an earlier document.
+  const ended = connection.state === 'stale' || connection.state === 'closed';
+  if ((ended && owned.documentId !== null) || (snapshot !== null && snapshot.documentId !== owned.documentId)) {
+    setOwned({ documentId: snapshot?.documentId ?? null, fields });
+    setSelection(NOTHING_SELECTED);
+    setReference('');
+    setAck(null);
+    setAnnouncement(null);
+  } else if (snapshot !== null && fields !== owned.fields) {
+    setOwned({ documentId: snapshot.documentId, fields });
+    if (selection.fieldId !== null && !fields.some((field) => field.fieldId === selection.fieldId)) {
+      // The page replaced or removed the current control. Its stand-in is
+      // taken only when unambiguous; otherwise the person is told and chooses.
+      const moved = relocate(owned.fields, selection.fieldId, fields);
+      const revealed = new Set([...selection.revealed]
+        .map((fieldId) => (fieldId === selection.fieldId ? moved.fieldId ?? fieldId : fieldId))
+        .filter((fieldId) => fields.some((field) => field.fieldId === fieldId)));
+      setSelection({ fieldId: moved.fieldId, revealed });
+      if (moved.fieldId === null) {
+        const stale = acknowledgmentState(ack, { documentId: snapshot.documentId, revision }) === 'stale';
+        setAnnouncement({ situation, revision, text: `${relocationText[moved.reason]}${stale ? ` ${staleNotice}` : ''}` });
+      }
+    }
+  }
+
+  const currentIndex = Math.max(0, fields.findIndex((field) => field.fieldId === selection.fieldId));
   const current = fields[currentIndex] ?? null;
   const page = snapshot ? recognizePage(snapshot.origin) : null;
   const results = useMemo(() => (snapshot === null ? [] : validateSnapshot({
@@ -134,7 +173,6 @@ export default function App() {
   })), [reference, snapshot]);
   const currentResults = results.filter((result) => result.fieldId === current?.fieldId);
   const pack = snapshot ? packFor(snapshot) : null;
-  const revision = snapshot ? revisionOf(snapshot, reference) : '';
   const ackState: AckState = acknowledgmentState(ack, snapshot === null ? null : { documentId: snapshot.documentId, revision });
   const summary = summarizeReview(results, fields, snapshot?.gaps ?? []);
   const issues = results
@@ -146,12 +184,18 @@ export default function App() {
     ? staleNotice
     : announcement?.situation === situation ? announcement.text : connectionText(connection);
 
+  // What is on screen now, for callbacks that finish after the page has moved on.
+  const live = useRef({ situation, revision });
+  useEffect(() => { live.current = { situation, revision }; });
+
   function updateSession(next: Session) {
     setSession(next);
     void saveSession(next);
   }
 
   function announce(text: string) {
+    // A message about an earlier page state is dropped, not kept out of sight.
+    if (live.current.situation !== situation) return;
     setAnnouncement({ situation, revision, text });
   }
 
@@ -188,9 +232,9 @@ export default function App() {
     announce('समीक्षा पढ़ने की स्वीकृति दर्ज हुई। यह पोर्टल की स्वीकृति, पहचान की पुष्टि या आवेदन भेजना नहीं है।');
   }
 
-  function setCurrent(fieldId: string, revealed: ReadonlySet<string> = active.revealed) {
+  function setCurrent(fieldId: string, revealed: ReadonlySet<string> = selection.revealed) {
     if (!snapshot) return;
-    setSelection({ documentId: snapshot.documentId, fieldId, revealed });
+    setSelection({ fieldId, revealed });
   }
 
   function move(delta: number) {
@@ -210,17 +254,22 @@ export default function App() {
     if (field) goToField(field);
   }
 
-  function goToField(field: FormField) {
+  async function goToField(field: FormField) {
     setCurrent(field.fieldId);
     announce(`पेज में फ़ोकस: ${field.label || noField}। लौटने के लिए F6 दबाएँ।`);
-    void focusField(field.fieldId);
+    const outcome = await focusField(field.fieldId);
+    if (outcome.focused || outcome.fresh === null) return;
+    // The control was replaced while the request was on its way: aim once
+    // more, at its unambiguous stand-in only, never at a guess.
+    const moved = relocate(fields, field.fieldId, outcome.fresh.fields);
+    if (moved.fieldId !== null) await focusField(moved.fieldId);
   }
 
   function toggleReveal(field: FormField) {
-    const revealed = new Set(active.revealed);
+    const revealed = new Set(selection.revealed);
     const showing = !revealed.delete(field.fieldId);
     if (showing) revealed.add(field.fieldId);
-    setCurrent(active.fieldId ?? field.fieldId, revealed);
+    setCurrent(selection.fieldId ?? field.fieldId, revealed);
     announce(showing ? `पूरा मान दिखाया गया: ${field.label || noField}` : 'मान फिर छिपा दिया गया।');
   }
 
@@ -243,7 +292,7 @@ export default function App() {
   }
 
   async function speak(field: FormField) {
-    if (await speakLocally(spokenText(field, active.revealed.has(field.fieldId)))) announce('पढ़कर सुनाया जा रहा है।');
+    if (await speakLocally(spokenText(field, selection.revealed.has(field.fieldId)))) announce('पढ़कर सुनाया जा रहा है।');
   }
 
   async function speakReview() {
@@ -326,7 +375,7 @@ export default function App() {
             <p className="text-sm">फ़ील्ड {currentIndex + 1} / {fields.length} · {current.group || 'अन्य फ़ील्ड'}</p>
             <p className="text-lg font-bold" lang={current.lang || undefined}>{current.label || noField}</p>
             <p>{metaText(current)}</p>
-            <FieldValue field={current} revealed={active.revealed.has(current.fieldId)} />
+            <FieldValue field={current} revealed={selection.revealed.has(current.fieldId)} />
             {current.constraints.pattern === null ? null : (
               <p>पेज का प्रारूप नियम: <span lang="en">{current.constraints.pattern}</span></p>
             )}
@@ -355,12 +404,12 @@ export default function App() {
             </button>
           </div>
           <div className="flex flex-wrap gap-3">
-            <button type="button" onClick={() => goToField(current)} className={button}>
+            <button type="button" onClick={() => void goToField(current)} className={button}>
               मूल फ़ील्ड पर जाएँ
             </button>
-            {fieldValue(current, active.revealed.has(current.fieldId)).maskable ? (
+            {fieldValue(current, selection.revealed.has(current.fieldId)).maskable ? (
               <button type="button" onClick={() => toggleReveal(current)} className={button}>
-                {active.revealed.has(current.fieldId) ? 'मान छिपाएँ' : 'पूरा मान दिखाएँ'}
+                {selection.revealed.has(current.fieldId) ? 'मान छिपाएँ' : 'पूरा मान दिखाएँ'}
               </button>
             ) : null}
           </div>
@@ -381,7 +430,7 @@ export default function App() {
           reference={reference}
           pack={pack}
           session={session}
-          onGoToField={goToField}
+          onGoToField={(field) => void goToField(field)}
           announce={announce}
         />
       )}
@@ -417,7 +466,7 @@ export default function App() {
           summary={summary}
           issues={issues}
           pack={pack}
-          revealed={active.revealed}
+          revealed={selection.revealed}
           ackState={ackState}
           ackLabel={ack === null ? null : `संशोधन ${shortRevision(ack.revision)} · ${ack.at}`}
           acknowledging={acknowledging}
@@ -444,7 +493,7 @@ export default function App() {
                   <li key={field.fieldId} className="border-l-4 border-stone-400 pl-4">
                     <button
                       type="button"
-                      onClick={() => goToField(field)}
+                      onClick={() => void goToField(field)}
                       aria-current={field.fieldId === current?.fieldId ? 'true' : undefined}
                       lang={field.lang || undefined}
                       className={`${button} w-full text-left ${
@@ -453,7 +502,7 @@ export default function App() {
                       {field.label || noField}
                     </button>
                     <p className="mt-2 text-sm">{metaText(field)}</p>
-                    <FieldValue field={field} revealed={active.revealed.has(field.fieldId)} />
+                    <FieldValue field={field} revealed={selection.revealed.has(field.fieldId)} />
                   </li>
                 ))}
               </ul>

@@ -1,0 +1,47 @@
+# Three hostnames, all placeholders until the owner records the real ones.
+# Caddy obtains and renews certificates itself. Access logs are JSON with the
+# Authorization and Cookie headers removed; request bodies are never logged.
+
+(safe_log) {
+	log {
+		output file /var/log/caddy/{args[0]}.log {
+			roll_size 50MiB
+			roll_keep 10
+			roll_keep_for 720h
+		}
+		format filter {
+			wrap json
+			fields {
+				request>headers>Authorization delete
+				request>headers>Cookie delete
+			}
+		}
+	}
+}
+
+# The API: the loopback-only Nest process behind TLS. Recordings are capped at
+# 4 MiB by the API; the proxy allows headroom for multipart framing.
+api.example.org {
+	import safe_log api
+	encode gzip
+	request_body {
+		max_size 6MB
+	}
+	reverse_proxy 127.0.0.1:3000
+}
+
+# The companion website: `next start` on loopback.
+www.example.org {
+	import safe_log www
+	encode gzip
+	reverse_proxy 127.0.0.1:3100
+}
+
+# The fictional practice pages: static files with their own hostname, because
+# the built pages reference /assets/… from the site root.
+practice.example.org {
+	import safe_log practice
+	encode gzip
+	root * /opt/form-saathi/current/fixtures/dist
+	file_server
+}

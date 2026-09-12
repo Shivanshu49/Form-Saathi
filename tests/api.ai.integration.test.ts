@@ -18,9 +18,13 @@ const PROVIDER_KEY = 'sk_test_provider_key_never_logged';
 
 type Reply = { status: number; body: string; contentType?: string };
 type Received = { path: string; headers: IncomingHttpHeaders; body: string };
+/** A provider request whose reply the test releases, and whether the API side hung up first. */
+type Held = { path: string; closedByPeer: boolean; release: (reply: Reply) => void };
 
 const replies = new Map<string, Reply[]>();
 let received: Received[] = [];
+const holds = new Set<string>();
+let held: Held[] = [];
 
 function program(path: string, ...queue: Reply[]): void {
   replies.set(path, queue);
@@ -76,23 +80,27 @@ function wav(bytes = 64): Buffer {
   return buffer;
 }
 
-async function post(path: string, body: unknown, auth: string | null = token): Promise<Response> {
+async function post(path: string, body: unknown, auth: string | null = token, signal?: AbortSignal): Promise<Response> {
   return fetch(`${origin}${path}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', ...(auth ? { authorization: `Bearer ${auth}` } : {}) },
     body: JSON.stringify(body),
+    signal: signal ?? null,
   });
 }
 
-async function postAudio(bytes: Buffer, type: string, auth: string | null = token): Promise<Response> {
+async function postAudio(bytes: Buffer, type: string, auth: string | null = token, signal?: AbortSignal): Promise<Response> {
   const form = new FormData();
   form.append('audio', new Blob([new Uint8Array(bytes)], { type }), 'recording.wav');
   return fetch(`${origin}/v1/speech/transcribe`, {
     method: 'POST',
     headers: auth ? { authorization: `Bearer ${auth}` } : {},
     body: form,
+    signal: signal ?? null,
   });
 }
+
+const settle = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const field = {
   label: 'डाक PIN (आवश्यक)',
@@ -111,10 +119,19 @@ beforeAll(async () => {
     request.on('end', () => {
       const path = request.url ?? '';
       received.push({ path, headers: request.headers, body: Buffer.concat(chunks).toString('latin1') });
+      const answer = (reply: Reply) => {
+        response.writeHead(reply.status, { 'content-type': reply.contentType ?? 'text/plain' });
+        response.end(reply.body);
+      };
+      if (holds.has(path)) {
+        const entry: Held = { path, closedByPeer: false, release: answer };
+        // A close before the reply finished means the API side dropped the connection.
+        response.on('close', () => { if (!response.writableFinished) entry.closedByPeer = true; });
+        held.push(entry);
+        return;
+      }
       const queue = replies.get(path) ?? [];
-      const reply = queue.length > 1 ? queue.shift()! : queue[0] ?? json({ error: 'unprogrammed' }, 500);
-      response.writeHead(reply.status, { 'content-type': reply.contentType ?? 'text/plain' });
-      response.end(reply.body);
+      answer(queue.length > 1 ? queue.shift()! : queue[0] ?? json({ error: 'unprogrammed' }, 500));
     });
   });
   await new Promise<void>((resolve) => provider.listen(0, '127.0.0.1', resolve));
@@ -126,6 +143,11 @@ beforeAll(async () => {
 afterEach(() => {
   received = [];
   replies.clear();
+  holds.clear();
+  for (const entry of held) {
+    try { entry.release(json({ error: 'released after test' }, 500)); } catch { /* already closed */ }
+  }
+  held = [];
 });
 
 afterAll(async () => {
@@ -260,7 +282,11 @@ describe('provider failures', () => {
 
   it('gives up on a provider that never answers, without hanging the caller', async () => {
     replies.set('/v1/chat/completions', []);
-    const slow = createServer((_request, response) => { void response; });
+    // Never answers; records whether the API side hung up before any reply.
+    const droppedByPeer: boolean[] = [];
+    const slow = createServer((_request, response) => {
+      response.on('close', () => droppedByPeer.push(!response.writableFinished));
+    });
     await new Promise<void>((resolve) => slow.listen(0, '127.0.0.1', resolve));
     const stalled = await startApi({
       SARVAM_BASE_URL: `http://127.0.0.1:${(slow.address() as AddressInfo).port}`,
@@ -275,11 +301,81 @@ describe('provider failures', () => {
       });
       expect(response.status).toBe(502);
       expect(apiErrorSchema.parse(await response.json()).error).toBe('provider_unavailable');
+      // The timed-out attempt was actually abandoned upstream, not left hanging.
+      await expect.poll(() => droppedByPeer).toEqual([true]);
     } finally {
       await stalled.app.close();
       await new Promise<void>((resolve) => { slow.closeAllConnections(); slow.close(() => resolve()); });
     }
   }, 15_000);
+});
+
+describe('caller cancellation', () => {
+  const unknownReply = () => chatReply({ outcome: 'unknown', explanation: 'अर्थ स्पष्ट नहीं है।' });
+
+  it('audit regression: cancelling a JSON request after its body was uploaded aborts the provider call and skips retries', async () => {
+    holds.add('/v1/chat/completions');
+    const controller = new AbortController();
+    const outcome = post('/v1/fields/interpret', { field }, token, controller.signal)
+      .then(() => 'answered', (error: Error) => error.name);
+    await expect.poll(() => held.length).toBe(1);
+    expect(held[0]?.closedByPeer).toBe(false);
+    controller.abort();
+    await expect(outcome).resolves.toBe('AbortError');
+    await expect.poll(() => held[0]?.closedByPeer).toBe(true);
+    await settle(600);
+    expect(received).toHaveLength(1);
+    // The service is unaffected: the next request completes normally.
+    holds.clear();
+    program('/v1/chat/completions', unknownReply());
+    const next = await post('/v1/fields/interpret', { field });
+    expect(next.status).toBe(200);
+    expect(received).toHaveLength(2);
+  });
+
+  it('audit regression: cancelling a multipart upload the provider already holds aborts the transcription call', async () => {
+    holds.add('/speech-to-text');
+    const controller = new AbortController();
+    const outcome = postAudio(wav(), 'audio/wav', token, controller.signal)
+      .then(() => 'answered', (error: Error) => error.name);
+    await expect.poll(() => held.length).toBe(1);
+    // The whole recording had reached the provider before the caller left.
+    expect(received[0]?.body).toContain('RIFF');
+    expect(held[0]?.closedByPeer).toBe(false);
+    controller.abort();
+    await expect(outcome).resolves.toBe('AbortError');
+    await expect.poll(() => held[0]?.closedByPeer).toBe(true);
+    await settle(600);
+    expect(received).toHaveLength(1);
+  });
+
+  it('audit regression: a cancellation during retry backoff ends the wait and prevents the retry', async () => {
+    holds.add('/v1/chat/completions');
+    const controller = new AbortController();
+    const outcome = post('/v1/fields/interpret', { field }, token, controller.signal)
+      .then(() => 'answered', (error: Error) => error.name);
+    await expect.poll(() => held.length).toBe(1);
+    // A retryable status: the adapter now waits 200 ms before its second attempt.
+    held[0]!.release(json({ error: 'busy' }, 503));
+    await settle(50);
+    const started = Date.now();
+    controller.abort();
+    await expect(outcome).resolves.toBe('AbortError');
+    await settle(700);
+    expect(received).toHaveLength(1);
+    expect(Date.now() - started).toBeLessThan(2000);
+  });
+
+  it('completes normally when nobody cancels a held request', async () => {
+    holds.add('/v1/chat/completions');
+    const pending = post('/v1/fields/interpret', { field });
+    await expect.poll(() => held.length).toBe(1);
+    held[0]!.release(unknownReply());
+    const response = await pending;
+    expect(response.status).toBe(200);
+    expect((await response.json() as { interpretation: { outcome: string } }).interpretation.outcome).toBe('unknown');
+    expect(held[0]?.closedByPeer).toBe(false);
+  });
 });
 
 describe('malformed model output', () => {
@@ -355,6 +451,52 @@ describe('generic help audio', () => {
 });
 
 describe('rate limits and safe errors', () => {
+  it('audit regression: equivalent headers and renewed credentials share a verified identity limit', async () => {
+    const limited = await startApi({ RATE_LIMIT_PER_MINUTE: '3' });
+    const send = (authorization: string) => fetch(`${limited.origin}/v1/fields/interpret`, {
+      method: 'POST', headers: { 'content-type': 'application/json', authorization }, body: JSON.stringify({ field }),
+    });
+    try {
+      program('/v1/chat/completions', chatReply({ outcome: 'unknown', explanation: 'अर्थ स्पष्ट नहीं है।' }));
+      for (const prefix of ['Bearer ', 'Bearer  ', 'Bearer   ']) {
+        const response = await send(`${prefix}${token}`);
+        expect(response.status).toBe(200);
+        await response.json();
+      }
+      for (const header of [
+        `Bearer ${token}`, `Bearer  ${token}`, `Bearer   ${token}`, `bearer\t${token}`,
+        `Bearer ${mintPilotToken('tester', 2, PILOT_SECRET)}`,
+      ]) {
+        const response = await send(header);
+        expect(response.status).toBe(429);
+        expect(apiErrorSchema.parse(await response.json()).error).toBe('rate_limited');
+      }
+      const independent = await send(`Bearer ${mintPilotToken('independent-pilot', 1, PILOT_SECRET)}`);
+      expect(independent.status).toBe(200);
+      await independent.json();
+      expect(received).toHaveLength(4);
+    } finally { await limited.app.close(); }
+  });
+
+  it('audit regression: invalid headers and spoofed forwarded addresses share a pre-authentication limit', async () => {
+    const limited = await startApi({ PRE_AUTH_RATE_LIMIT_PER_MINUTE: '3' });
+    try {
+      const headers = [
+        'Bearer invalid-one', `Bearer ${mintPilotToken('expired', -1, PILOT_SECRET)}`,
+        `Bearer ${token.slice(0, -1)}!`, 'Bearer random-two', `Bearer ${token}`,
+      ];
+      for (const [index, authorization] of headers.entries()) {
+        const response = await fetch(`${limited.origin}/v1/fields/interpret`, {
+          method: 'POST', headers: { 'content-type': 'application/json', authorization, 'x-forwarded-for': `192.0.2.${index + 1}` },
+          body: JSON.stringify({ field }),
+        });
+        expect(response.status).toBe(index < 3 ? 401 : 429);
+        expect(apiErrorSchema.parse(await response.json()).error).toBe(index < 3 ? 'unauthorized' : 'rate_limited');
+      }
+      expect(received).toEqual([]);
+    } finally { await limited.app.close(); }
+  });
+
   it('limits a credential and keeps the failure shape', async () => {
     const limited = await startApi({ RATE_LIMIT_PER_MINUTE: '3' });
     try {

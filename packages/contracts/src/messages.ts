@@ -22,6 +22,12 @@ export const fieldOptionSchema = z.strictObject({
 export const formFieldSchema = z.strictObject({
   /** Stable while the document lives; not reused across reloads. */
   fieldId: z.string().min(1),
+  /**
+   * Identifier of the form element that owns the control, stable like
+   * `fieldId`, or empty for a control outside any form. Two id-less forms
+   * may carry the same control names, so a name never stands in for this.
+   */
+  form: z.string(),
   /** The control's own name or id. Page-supplied: rule packs match on it. */
   key: z.string(),
   kind: z.enum(['text', 'textarea', 'select', 'radio-group', 'checkbox']),

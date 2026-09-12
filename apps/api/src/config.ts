@@ -27,6 +27,8 @@ const configSchema = z.object({
   /** Retries after the first attempt, for timeouts and retryable statuses only. */
   providerRetries: z.coerce.number().int().min(0).max(3).default(1),
   rateLimitPerMinute: z.coerce.number().int().min(1).max(600).default(20),
+  /** All authentication attempts from one socket address, before token verification. */
+  preAuthRateLimitPerMinute: z.coerce.number().int().min(1).max(10_000).default(600),
 });
 
 export type Config = z.infer<typeof configSchema>;
@@ -46,6 +48,7 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): Config {
     providerTimeoutMs: env['PROVIDER_TIMEOUT_MS'],
     providerRetries: env['PROVIDER_RETRIES'],
     rateLimitPerMinute: env['RATE_LIMIT_PER_MINUTE'],
+    preAuthRateLimitPerMinute: env['PRE_AUTH_RATE_LIMIT_PER_MINUTE'],
   });
 }
 

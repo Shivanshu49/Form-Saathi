@@ -56,8 +56,17 @@ function responseFormat<T>(request: InterpretRequest<T>): unknown {
   }
 }
 
-function wait(ms: number): Promise<void> {
-  return new Promise((resolve) => { setTimeout(resolve, ms); });
+function cancelled(): ApiFailure {
+  return new ApiFailure(499, 'cancelled', 'The request was cancelled.');
+}
+
+/** A retry backoff that ends as soon as the caller leaves. */
+function wait(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    const finish = () => { clearTimeout(timer); signal.removeEventListener('abort', finish); resolve(); };
+    const timer = setTimeout(finish, ms);
+    signal.addEventListener('abort', finish, { once: true });
+  });
 }
 
 export class SarvamProvider implements AiProvider {
@@ -70,11 +79,16 @@ export class SarvamProvider implements AiProvider {
     return this.config.providerKey;
   }
 
-  /** One attempt plus bounded retries, each with its own timeout. */
+  /**
+   * One attempt plus bounded retries, each with its own timeout. The caller's
+   * signal aborts the attempt in flight, including its body read, cuts a
+   * backoff short, and stops any further attempt: the top of the loop checks
+   * it before every request.
+   */
   private async send(path: string, init: RequestInit, signal: AbortSignal): Promise<Response> {
     const key = this.key();
     for (let attempt = 0; ; attempt += 1) {
-      if (signal.aborted) throw new ApiFailure(499, 'cancelled', 'The request was cancelled.');
+      if (signal.aborted) throw cancelled();
       const timeout = AbortSignal.timeout(this.config.providerTimeoutMs);
       try {
         const response = await fetch(`${this.config.providerBaseUrl}${path}`, {
@@ -90,7 +104,7 @@ export class SarvamProvider implements AiProvider {
         });
         if (response.ok) return response;
         if (RETRYABLE.has(response.status) && attempt < this.config.providerRetries) {
-          await wait(200 * (attempt + 1));
+          await wait(200 * (attempt + 1), signal);
           continue;
         }
         // The status is useful to an operator; the body may quote the request.
@@ -98,9 +112,9 @@ export class SarvamProvider implements AiProvider {
       } catch (error) {
         if (error instanceof ApiFailure) throw error;
         // A caller who left is not a provider failure, and is never retried.
-        if (signal.aborted) throw new ApiFailure(499, 'cancelled', 'The request was cancelled.');
+        if (signal.aborted) throw cancelled();
         if (attempt < this.config.providerRetries) {
-          await wait(200 * (attempt + 1));
+          await wait(200 * (attempt + 1), signal);
           continue;
         }
         throw new ApiFailure(502, 'provider_unavailable', 'The language service did not respond in time.');
@@ -108,10 +122,12 @@ export class SarvamProvider implements AiProvider {
     }
   }
 
-  private async json(response: Response): Promise<unknown> {
+  private async json(response: Response, signal: AbortSignal): Promise<unknown> {
     try {
       return await response.json();
     } catch {
+      // Aborting the signal also drops a body still arriving; that is not a bad reply.
+      if (signal.aborted) throw cancelled();
       throw new ApiFailure(502, 'provider_response_invalid', 'The language service returned an unreadable reply.');
     }
   }
@@ -122,7 +138,7 @@ export class SarvamProvider implements AiProvider {
     form.append('model', this.config.transcribeModel);
     form.append('language_code', 'hi-IN');
     const response = await this.send('/speech-to-text', { method: 'POST', body: form }, signal);
-    const parsed = transcriptionResponse.safeParse(await this.json(response));
+    const parsed = transcriptionResponse.safeParse(await this.json(response, signal));
     if (!parsed.success) {
       throw new ApiFailure(502, 'provider_response_invalid', 'The language service returned an unexpected reply.');
     }
@@ -144,7 +160,7 @@ export class SarvamProvider implements AiProvider {
         response_format: responseFormat(request),
       }),
     }, signal);
-    const parsed = chatResponse.safeParse(await this.json(response));
+    const parsed = chatResponse.safeParse(await this.json(response, signal));
     const content = parsed.success ? parsed.data.choices[0]?.message.content ?? '' : '';
     if (content === '') {
       throw new ApiFailure(502, 'provider_response_invalid', 'The language service returned an empty reply.');
@@ -175,7 +191,7 @@ export class SarvamProvider implements AiProvider {
         output_audio_codec: 'wav',
       }),
     }, signal);
-    const parsed = speechResponse.safeParse(await this.json(response));
+    const parsed = speechResponse.safeParse(await this.json(response, signal));
     if (!parsed.success || parsed.data.audios[0] === undefined) {
       throw new ApiFailure(502, 'provider_response_invalid', 'The language service returned no audio.');
     }

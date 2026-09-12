@@ -16,6 +16,10 @@ Warnings shown for correct values (false warnings), per task:
 
 Seeded issues the tool never flagged (missed errors), B and C only:
 
+Hindi wording found unclear or misleading (rule id, button name or heading — never a value):
+
+Accessibility blockers (recorded separately from the counts above):
+
 Observations — never write a field value, a name or anything spoken:
 
 Transfer the counts to `studies/results/<file>.json` and keep this log outside Git.

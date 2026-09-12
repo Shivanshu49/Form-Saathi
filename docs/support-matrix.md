@@ -36,7 +36,12 @@ F1 exercise conventions, not confirmed 2026–27 portal rules.
 Omitted: category/year, family/income/community fields, full address hierarchy,
 academic/application-specific details, schemes, uploads, OTR/eKYC/login, CAPTCHA,
 submission, review locks and eligibility. N3's historical requiredness colors
-are not imported as current rules.
+are not imported as current rules. N2 Q11–13 add that contact details and
+parents' names are refreshed from OTR and not editable on the application form;
+the practice page carries neither, so no such field is mapped. The live
+inventory procedure for replacing these fixture ids with observed control
+names is in [live-verification.md](live-verification.md); until it is run,
+every id here is a practice id.
 
 ## ECI Form 6 inventory
 
@@ -76,9 +81,12 @@ cannot complete a real Form 6. No Aadhaar mandate or EPIC format is invented.
 | F9 | ECI row merging, Hindi task language, required metadata where noted, reduced choices, date text input and conditional DOM layout. |
 
 Text dates preserve impossible test values that a date picker would sanitize.
+Both practice date fields are text controls; neither portal's live date control
+type or bounds has been observed, so no portal date bound exists in any pack.
 IDs stay stable across profiles. Radio changes preserve native focus and toggle
 the conditional fieldset's `hidden`/`disabled` states. Hidden values are retained
-in this page's memory but are not applicable; future readers must exclude them.
+in this page's memory but are not applicable; the reader lists such controls as
+inactive with no value and no selected option.
 The inserted note is absent before activation; next Tab reaches it. Reload/reset
 restores the selected scenario and removes inserted notes.
 
@@ -115,7 +123,10 @@ mappings remain unverified there.
 | --- | --- | --- |
 | `required-value` | error | The pack's requirement, or the page's own `required` marker for a field the pack does not map |
 | `conditional-unknown` | unchecked | The controlling field could not be read |
-| `date-format`, `date-calendar` | error | Strict calendar arithmetic with leap years. No age or eligibility decision |
+| `date-format`, `date-calendar` | error | Strict calendar arithmetic with leap years; year 0 is rejected; a native date control's ISO value is read as such, text controls take day/month/year. No age or eligibility decision |
+| `date-future` | error | A date of birth after today, where today is the browser's local calendar date at the time of the check; a date equal to today is accepted |
+| `date-bounds` | error | Outside a native date control's own `min`/`max`. No portal bound is enforced, because no reviewed source states one for either workflow |
+| `dob-eligibility-unchecked` | unchecked | Named on every page with a mapped date of birth: no minimum age, maximum age or historical cutoff is applied; eligibility is the portal's question |
 | `pin-format` | error | Fixture convention F3, named as such in the message |
 | `otr-format` | error | N1, and only for a field mapped as an OTR |
 | `ifsc-format` | error | B1 |
@@ -137,7 +148,8 @@ field; those rules are exercised by `packages/rules/src/validate.test.ts`.
 
 An authorized session must establish exact URLs/stages, current controls,
 labels/descriptions, required/conditional rules, visibility, editability,
-stable mappings, dynamic updates, unsupported frames/widgets, focus behavior
-and review boundaries. Test the installed extension with ordinary Chrome and
+stable mappings, dynamic updates, unsupported frames/widgets, focus behavior,
+date control types and bounds, form ownership of controls, and review
+boundaries. Test the installed extension with ordinary Chrome and
 Windows/NVDA, recording versions, evidence and unresolved gaps. Public sources
 and A/B practice tests do not close this work.

@@ -67,7 +67,17 @@ task for that field. A session has a time limit of 25 minutes.
 | Task completion | The participant ended the session believing the corrections were done, with all seeded issues actually resolved or correctly identified as upstream |
 | Time | Seconds from opening the profile to ending the session |
 | Human assistance | Each time the tester helped: navigation help, an explanation, or physical help; counted, with the type in the session log |
+| Unclear wording | Panel sentences, button names or messages the participant reported unclear or misleading, counted and listed in the session log by identifier only |
 | CAPTCHA blockers | Recorded separately and never folded into the counts above. The practice forms contain no CAPTCHA; this column exists so any future live-like step reports blockage honestly |
+
+## Hindi wording review
+
+After each session the tester asks which panel sentences, button names or
+messages were unclear or misleading, and records them in the session log by
+message identifier — the rule id, the button name or the section heading —
+never by the value that was on screen. The wording is revised before the next
+participant only if the change does not alter what a message claims; claims are
+never strengthened from participant feedback.
 
 ## Data handling
 

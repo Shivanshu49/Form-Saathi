@@ -23,7 +23,7 @@ declare global {
 
 /** Controls that carry secrets. Their values are never collected, only counted. */
 const SENSITIVE_LATIN =
-  /\b(otp|one[-\s]?time(-code)?|captcha|password|passwd|passcode|cvv|cvc|cc-(number|csc|exp)|card[-\s]?number|security[-\s]?code)\b/i;
+  /\b(otp|one\s?time|captcha|pass\s?word|passwd|pass\s?code|cvv|cvc|cc\s(number|csc|exp)|card\s?number|security\s?code)\b/i;
 // Devanagari has no ASCII word boundaries, so these terms are matched on their own.
 const SENSITIVE_HINDI = /(ओटीपी|कैप्चा|पासवर्ड|गुप्त\s?शब्द|सुरक्षा\s?कोड)/;
 /** Buttons and hidden inputs are not fields a person fills in. */
@@ -90,8 +90,20 @@ function identify(element: Element): string {
 
 function isSensitive(control: FormControl): boolean {
   if (control instanceof HTMLInputElement && control.type === 'password') return true;
-  const text = `${control.name} ${control.id} ${control.getAttribute('autocomplete') ?? ''} ${labelOf(control)}`;
-  return SENSITIVE_LATIN.test(text) || SENSITIVE_HINDI.test(text);
+  // Check all label sources, even when an innocuous aria-label takes priority
+  // for display. No values or options are touched at this boundary.
+  const metadata = [
+    control.name, control.id, control.getAttribute('autocomplete'), labelOf(control),
+    control.getAttribute('aria-label'), control.getAttribute('title'), control.getAttribute('placeholder'),
+    groupOf(control), ...[...control.labels ?? []].map((label) => label.textContent),
+  ];
+  return metadata.some((text) => {
+    const words = (text ?? '').normalize('NFKC')
+      .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+      .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+      .replace(/[_\s-]+/g, ' ');
+    return SENSITIVE_LATIN.test(words) || SENSITIVE_HINDI.test(words);
+  });
 }
 
 function controlType(control: FormControl): string {
@@ -124,16 +136,25 @@ function constraintsOf(control: FormControl): FormField['constraints'] {
   };
 }
 
-function optionsOf(control: FormControl): FormField['options'] {
+/** The form element that owns a control, as a stable identifier; empty outside any form. */
+function formOf(control: FormControl): string {
+  return control.form ? identify(control.form) : '';
+}
+
+/**
+ * The choices a page offers, which explain a field. An inactive control keeps
+ * its option labels and values, never which one the person had chosen.
+ */
+function optionsOf(control: FormControl, active: boolean): FormField['options'] {
   if (control instanceof HTMLSelectElement) {
     return [...control.options].map((option) => ({
       value: option.value,
       label: clean(option.textContent) || option.value,
-      selected: option.selected,
+      selected: active && option.selected,
     }));
   }
   if (control instanceof HTMLInputElement && control.type === 'checkbox') {
-    return [{ value: control.value, label: labelOf(control), selected: control.checked }];
+    return [{ value: control.value, label: labelOf(control), selected: active && control.checked }];
   }
   return [];
 }
@@ -144,6 +165,7 @@ function readField(control: FormControl, target: Map<string, HTMLElement>): Form
   target.set(fieldId, control);
   return {
     fieldId,
+    form: formOf(control),
     key: control.name || control.id,
     kind: kindOf(control),
     label: labelOf(control),
@@ -155,7 +177,7 @@ function readField(control: FormControl, target: Map<string, HTMLElement>): Form
     required: control.required,
     readOnly: 'readOnly' in control ? control.readOnly : false,
     value: active ? readValue(control) : null,
-    options: optionsOf(control),
+    options: optionsOf(control, active),
     constraints: constraintsOf(control),
   };
 }
@@ -177,6 +199,7 @@ function readRadioGroup(members: HTMLInputElement[], target: Map<string, HTMLEle
   target.set(fieldId, checked ?? first);
   return {
     fieldId,
+    form: formOf(first),
     key: first.name || first.id,
     kind: 'radio-group',
     label: groupOf(first) || labelOf(first),
@@ -191,7 +214,7 @@ function readRadioGroup(members: HTMLInputElement[], target: Map<string, HTMLEle
     options: members.map((member) => ({
       value: member.value,
       label: labelOf(member) || member.value,
-      selected: member.checked,
+      selected: active && member.checked,
     })),
     constraints: { control: 'radio', pattern: null, inputMode: null, maxLength: null, min: null, max: null },
   };
@@ -216,27 +239,36 @@ export default defineUnlistedScript(() => {
     targets.clear();
     const fields: FormField[] = [];
     const gaps: CoverageGap[] = [];
-    const groups = new Set<string>();
+    const grouped = new Set<HTMLInputElement>();
+    const controls = [...document.querySelectorAll<FormControl>('input, select, textarea')];
 
-    for (const control of document.querySelectorAll<FormControl>('input, select, textarea')) {
+    for (const control of controls) {
       const type = controlType(control);
       if (IGNORED_TYPES.has(type)) continue;
+      if (control instanceof HTMLInputElement && type === 'radio') {
+        if (grouped.has(control)) continue;
+        // Native form ownership also includes radios outside their form; an
+        // unnamed radio is independent. Inspect every member before reading any.
+        // ponytail: scan controls per group; index by form/name if a portal is large.
+        const members = control.name === '' ? [control] : controls.filter((member): member is HTMLInputElement => (
+          member instanceof HTMLInputElement && member.type === 'radio'
+          && member.name === control.name && member.form === control.form
+        ));
+        for (const member of members) grouped.add(member);
+        const sensitive = members.filter(isSensitive);
+        if (sensitive.length > 0) {
+          for (const member of sensitive) gaps.push({ reason: 'sensitive', label: describe(member) });
+          continue;
+        }
+        fields.push(readRadioGroup(members, targets));
+        continue;
+      }
       if (isSensitive(control)) {
         gaps.push({ reason: 'sensitive', label: describe(control) });
         continue;
       }
       if (UNSUPPORTED_TYPES.has(type)) {
         gaps.push({ reason: 'unsupported-control', label: describe(control) });
-        continue;
-      }
-      if (control instanceof HTMLInputElement && type === 'radio') {
-        const key = `${control.form?.id ?? ''}::${control.name}`;
-        if (groups.has(key)) continue;
-        groups.add(key);
-        const scope = control.form ?? document;
-        const members = [...scope.querySelectorAll<HTMLInputElement>('input[type="radio"]')]
-          .filter((member) => member.name === control.name);
-        fields.push(readRadioGroup(members, targets));
         continue;
       }
       fields.push(readField(control, targets));
@@ -270,11 +302,14 @@ export default defineUnlistedScript(() => {
   /**
    * What was last sent, as the panel's own review sees it: labels,
    * instructions, values, options, constraints, states and gaps, plus the
-   * title. Sequence and timing are left out, so an unchanged page is not
+   * title, and the identity of every control and its form. A control replaced
+   * by an identical one is a new focus target the panel must learn about,
+   * while sequence and timing are left out, so an unchanged page is not
    * re-announced and does not invalidate an acknowledgment.
    */
   function digestOf(snapshot: FormSnapshot): string {
-    return `${snapshot.title}\n${snapshotRevision(snapshot.fields, snapshot.gaps)}`;
+    const identity = snapshot.fields.map((field) => `${field.fieldId}/${field.form}`).join(' ');
+    return `${snapshot.title}\n${identity}\n${snapshotRevision(snapshot.fields, snapshot.gaps)}`;
   }
 
   function send(reply: ReaderReply): void {

@@ -30,6 +30,20 @@ The zip was unpacked and inspected on 2026-09-12:
 | Development-only configuration | None. No WXT reload command, websocket, `localhost` dev server or source map. The single `localhost` string is the rules package's list of loopback hosts used to label a page as a local practice page. |
 | Network reach of the panel | Two fetch sites, both to `API_ORIGIN` from `apps/extension/config.ts`: the health check and the `/v1` routes. |
 
+## Deployment package
+
+[`deploy/`](../deploy/README.md) holds a reviewable, not yet authorized
+package: a Caddyfile for the API, website and practice-page hostnames with
+filtered access logs, systemd units for the API and website with an
+environment file, `smoke.sh` for health, credential refusal and rate-limit
+verification, a release/rollback layout, a logging policy, and the ordered
+steps from host to distributed ZIP including the smoke test with the
+installed extension. Three decisions are still the owner's to record before any of it
+runs: the public origin, the funded provider key, and approval to distribute
+to participants. The API ignores forwarded-address headers, so behind the
+proxy the pre-authentication limit is shared by all clients; the package says
+how to size it or move it to the proxy.
+
 ## Configuring HTTPS API access
 
 The extension reaches the API only at the origin compiled into it, and Chrome
@@ -48,9 +62,9 @@ any CORS headers from the server**, so the API needs no CORS configuration.
    ```
    The manifest's `host_permissions` is derived from it (`${API_ORIGIN}/*`), so
    one edit changes both the fetch target and the permission Chrome shows.
-3. Rebuild and repackage: `npm run package:pilot`. The extension test asserts
-   the manifest's host permission equals `http://127.0.0.1:3000/*`; update
-   that assertion to the new origin in the same change.
+3. Rebuild and repackage: `npm run package:pilot`. The extension test reads
+   the same constant and asserts the manifest's host permission equals
+   `${API_ORIGIN}/*`, so no test edit is needed.
 4. Chrome will list the new origin as the extension's site access. That is the
    only site access it requests.
 
@@ -69,10 +83,15 @@ lists every variable with a placeholder.
 | `SARVAM_API_KEY` | any `/v1` route | server-side only; never a `WXT_`/`VITE_`/`NEXT_PUBLIC_` prefix |
 | `SARVAM_*_MODEL`, `SARVAM_SPEECH_SPEAKER` | optional | defaults `saaras:v3`, `sarvam-105b`, `bulbul:v3`, `shubh` |
 | `MAX_AUDIO_BYTES`, `PROVIDER_TIMEOUT_MS`, `PROVIDER_RETRIES`, `RATE_LIMIT_PER_MINUTE` | optional | defaults 4 MiB, 20 s, 1, 20/min |
+| `PRE_AUTH_RATE_LIMIT_PER_MINUTE` | optional | default 600/min per socket peer across AI routes, before credential verification; forwarded addresses are ignored. Authenticated limits apply per verified subject and route. |
 | `SARVAM_BASE_URL` | optional | provider origin; point at a mock for rehearsal |
 
 The service stores and logs no audio, transcript, form value or reference; its
-only log lines are route mapping and the class of an unhandled error.
+only log lines are route mapping and the class of an unhandled error. A
+caller that disconnects after uploading — a JSON body or a whole recording —
+makes the service abort its provider request, its body read and any retry
+wait, and nothing is written back to the closed connection; what the provider
+had already received is not recalled.
 
 ## Backend authentication setup
 
@@ -112,6 +131,46 @@ The [source register](source-register.md) and the
 - [ ] Practice pages served and `NEXT_PUBLIC_PRACTICE_ORIGIN` pointed at them.
 - [ ] Participants told what condition B sends and that raw audio is not
   redacted; results files started from `studies/results-template.json`.
+
+## Source revision
+
+The release candidate is **committed**, on branch `release-candidate-0.1.0`,
+base commit `c8c23ca`. The working tree that produced and passed every check
+below is that branch's tip; nothing is left uncommitted. `git log --oneline
+c8c23ca..release-candidate-0.1.0` lists the snapshot commits, and
+`git show --stat` on them lists every file.
+
+| Item | Value |
+| --- | --- |
+| Base commit | `c8c23ca30e9e2eddf4d82fbd86035a8a31f4e9ac` |
+| Branch | `release-candidate-0.1.0` (local; not pushed) |
+| Package | `apps/extension/.output/form-saathiextension-0.1.0-chrome.zip` |
+| Size / files | 153,630 bytes, 11 files |
+| SHA-256 | `8e5674c9de82f5ad3072aa439544974dacdf87bd4aa1da0c8d0e573cc4824b7c` |
+| Build commands | `npm ci` → `npm run build` → `npm run package:pilot` |
+| Runtime | Node 24.21.0, npm 11.19.0 (both pinned by `engines`, `.nvmrc`, `.node-version`) |
+| Checks it passed | `npm run typecheck`, `npm run lint`, `npm test` (101), `npm run test:e2e` (52), `npm run package:pilot` — all on this exact tree |
+
+The earlier hash `e524123f…` in [the audit](audit-2026-09-12.md) belongs to
+the first follow-up's package and is superseded. The package hash did not
+change between the second and third passes, because neither pass altered a
+file that enters the extension bundle.
+
+**Reproducing the package from the source snapshot.** The ZIP is built from
+committed source only, so it can be rebuilt from a clean extraction:
+
+```bash
+git archive --format=tar <commit> | tar -x -C <workdir>
+cd <workdir> && npm ci
+npm run build --workspace @form-saathi/extension
+npm run zip --workspace @form-saathi/extension
+sha256sum apps/extension/.output/form-saathiextension-0.1.0-chrome.zip
+```
+
+An archive for review excludes what is already git-ignored — `node_modules/`,
+`dist/`, `.output/`, `.next/`, `.wxt/`, `test-results/` and `.env` — so
+`git archive` is the archive to share; it can carry no secret, no dependency
+tree and no build cache.
 
 ## Demonstration
 

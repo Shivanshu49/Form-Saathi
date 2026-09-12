@@ -29,7 +29,11 @@ export type ValidationField = {
   required: boolean;
   value: string | null;
   options: readonly { value: string; label: string; selected: boolean }[];
+  /** The control's own kind and native bounds; a date input serialises ISO dates. */
+  constraints?: { control: string; min: string | null; max: string | null };
 };
+
+export type CalendarDate = { year: number; month: number; day: number };
 
 export type ValidationInput = {
   origin: string;
@@ -40,12 +44,16 @@ export type ValidationInput = {
    * inferred from speech, from the page, or from the Hindi name.
    */
   reference: { englishName: string };
+  /** The reference date for "not in the future"; defaults to `localToday()`. */
+  today?: CalendarDate;
 };
 
 const DEVANAGARI_DIGITS = /[०-९]/g;
 // A separate non-global copy: `.test()` on a /g regex keeps its lastIndex.
 const HAS_DEVANAGARI_DIGIT = /[०-९]/;
 const DATE_PARTS = /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/;
+/** What a native date control holds: an HTML valid date string, whatever the locale. */
+const ISO_DATE = /^(\d{4,})-(\d{2})-(\d{2})$/;
 const SIX_DIGITS = /^\d{6}$/;
 const FOURTEEN_DIGITS = /^\d{14}$/;
 const IFSC_CODE = /^[A-Z]{4}0[A-Z0-9]{6}$/;
@@ -71,20 +79,53 @@ export function daysInMonth(month: number, year: number): number {
 
 export type DateProblem =
   | { kind: 'format' }
+  | { kind: 'year' }
   | { kind: 'month' }
   | { kind: 'day'; month: number; year: number; days: number };
 
-/** Strict calendar check. It says nothing about age, eligibility or plausibility. */
-export function calendarProblem(value: string): DateProblem | null {
-  const parts = DATE_PARTS.exec(normalizeDigits(value).trim());
-  if (!parts) return { kind: 'format' };
-  const day = Number(parts[1]);
+/**
+ * Date policy: "today" is the calendar date of the machine running the check,
+ * in its own local time zone, read at the moment of the check. No time-zone
+ * conversion is applied and no server clock is consulted, because the check
+ * runs in the person's browser. A date equal to today is not in the future.
+ * Callers that need a fixed reference pass `today` themselves.
+ */
+export function localToday(now = new Date()): CalendarDate {
+  return { year: now.getFullYear(), month: now.getMonth() + 1, day: now.getDate() };
+}
+
+export function compareDates(left: CalendarDate, right: CalendarDate): number {
+  return left.year - right.year || left.month - right.month || left.day - right.day;
+}
+
+export function formatDate(date: CalendarDate): string {
+  return `${String(date.day).padStart(2, '0')}/${String(date.month).padStart(2, '0')}/${String(date.year).padStart(4, '0')}`;
+}
+
+/**
+ * Strict calendar parse of the formats supported controls actually produce:
+ * day/month/year text, or the ISO value of a native date input. It says
+ * nothing about age, eligibility or plausibility.
+ */
+export function parseDate(value: string, control = 'text'): { date: CalendarDate } | { problem: DateProblem } {
+  const text = normalizeDigits(value).trim();
+  const native = control === 'date';
+  const parts = (native ? ISO_DATE : DATE_PARTS).exec(text);
+  if (!parts) return { problem: { kind: 'format' } };
+  const day = Number(native ? parts[3] : parts[1]);
   const month = Number(parts[2]);
-  const year = Number(parts[3]);
-  if (month < 1 || month > 12) return { kind: 'month' };
+  const year = Number(native ? parts[1] : parts[3]);
+  // The proleptic Gregorian calendar HTML dates use has no year zero.
+  if (year < 1) return { problem: { kind: 'year' } };
+  if (month < 1 || month > 12) return { problem: { kind: 'month' } };
   const days = daysInMonth(month, year);
-  if (day < 1 || day > days) return { kind: 'day', month, year, days };
-  return null;
+  if (day < 1 || day > days) return { problem: { kind: 'day', month, year, days } };
+  return { date: { year, month, day } };
+}
+
+export function calendarProblem(value: string, control = 'text'): DateProblem | null {
+  const parsed = parseDate(value, control);
+  return 'problem' in parsed ? parsed.problem : null;
 }
 
 function text(field: ValidationField): string {
@@ -133,42 +174,54 @@ function requiredCheck(
   }];
 }
 
-function dateCheck(field: ValidationField, rule: FieldRule): ValidationResult[] {
+/**
+ * Date of birth: a real calendar date, not after today, and within the bounds
+ * the page's own date control declares. Validity only: no minimum age, maximum
+ * age or historical cutoff is assumed, because no reviewed source states one.
+ */
+function dateCheck(field: ValidationField, rule: FieldRule, today: CalendarDate): ValidationResult[] {
   const value = text(field);
   if (value === '') return [];
-  const problem = calendarProblem(value);
-  if (problem === null) return [];
+  const control = field.constraints?.control ?? 'text';
+  const parsed = parseDate(value, control);
   const action = rule.requirement === 'read-only'
     ? 'यह जानकारी दूसरी जगह से आती है; सुधार वहीं करना होगा।'
     : 'तारीख फिर देखें और सुधारें।';
-  if (problem.kind === 'format') {
-    return [{
-      ruleId: 'date-format',
-      fieldId: field.fieldId,
-      severity: 'error',
-      message: `${field.label}: तारीख दिन/महीना/वर्ष के रूप में नहीं लिखी है।`,
-      action: `${action} जैसे 15/08/2000।`,
-      source: rule.source,
-    }];
+  const error = (ruleId: string, message: string, next = action): ValidationResult => ({
+    ruleId, fieldId: field.fieldId, severity: 'error', message: `${field.label}: ${message}`, action: next, source: rule.source,
+  });
+  if ('problem' in parsed) {
+    const { problem } = parsed;
+    switch (problem.kind) {
+      case 'format':
+        return [error('date-format', control === 'date'
+          ? 'तारीख पढ़ी नहीं जा सकी; तारीख नियंत्रण में उसे फिर चुनें।'
+          : 'तारीख दिन/महीना/वर्ष के रूप में नहीं लिखी है।', `${action} जैसे 15/08/2000।`)];
+      case 'year':
+        return [error('date-calendar', 'वर्ष 0 कोई वर्ष नहीं होता; चार अंकों का वास्तविक वर्ष लिखें।')];
+      case 'month':
+        return [error('date-calendar', 'महीना 1 से 12 के बीच होना चाहिए।')];
+      case 'day':
+        return [error('date-calendar', `महीना ${problem.month}, वर्ष ${problem.year} में केवल ${problem.days} दिन होते हैं।`)];
+    }
   }
-  if (problem.kind === 'month') {
-    return [{
-      ruleId: 'date-calendar',
-      fieldId: field.fieldId,
-      severity: 'error',
-      message: `${field.label}: महीना 1 से 12 के बीच होना चाहिए।`,
-      action,
-      source: rule.source,
-    }];
+  const { date } = parsed;
+  if (compareDates(date, today) > 0) {
+    return [error('date-future', `यह तारीख आज (${formatDate(today)}) के बाद की है; जन्म तारीख भविष्य की नहीं हो सकती।`)];
   }
-  return [{
-    ruleId: 'date-calendar',
-    fieldId: field.fieldId,
-    severity: 'error',
-    message: `${field.label}: महीना ${problem.month}, वर्ष ${problem.year} में केवल ${problem.days} दिन होते हैं।`,
-    action,
-    source: rule.source,
-  }];
+  // Only a native date control enforces its own bounds; text inputs have none.
+  if (control === 'date') {
+    for (const [edge, bound] of [['min', field.constraints?.min], ['max', field.constraints?.max]] as const) {
+      if (!bound) continue;
+      const limit = parseDate(bound, 'date');
+      if ('problem' in limit) continue;
+      const outside = edge === 'min' ? compareDates(date, limit.date) < 0 : compareDates(date, limit.date) > 0;
+      if (outside) {
+        return [error('date-bounds', `पेज इस फ़ील्ड में ${formatDate(limit.date)} ${edge === 'min' ? 'से पहले' : 'के बाद'} की तारीख नहीं लेता।`)];
+      }
+    }
+  }
+  return [];
 }
 
 function identifierCheck(field: ValidationField, rule: FieldRule): ValidationResult[] {
@@ -318,10 +371,12 @@ export function validateWithPack(
   {
     const selection = { pack, via };
     results.push(...packNotes(selection.pack, selection.via));
+    const today = input.today ?? localToday();
     let unmapped = 0;
     let pinPresent = false;
     let otrPresent = false;
     let ifscPresent = false;
+    let dobPresent = false;
     for (const field of input.fields) {
       const rule = selection.pack.fields.find((mapping) => mapping.key === field.key);
       if (!rule) {
@@ -344,8 +399,9 @@ export function validateWithPack(
       pinPresent ||= rule.meaning === 'postal-pin';
       otrPresent ||= rule.meaning === 'nsp-otr';
       ifscPresent ||= rule.meaning === 'ifsc';
+      dobPresent ||= rule.meaning === 'date-of-birth';
       results.push(...requiredCheck(field, rule, input.fields));
-      if (rule.meaning === 'date-of-birth') results.push(...dateCheck(field, rule));
+      if (rule.meaning === 'date-of-birth') results.push(...dateCheck(field, rule, today));
       if (rule.meaning === 'english-name') results.push(...nameCheck(field, rule, input.reference.englishName));
       results.push(...identifierCheck(field, rule));
       results.push(...meaningNotes(field, rule));
@@ -378,6 +434,17 @@ export function validateWithPack(
         message: 'OTR किसका है और वह जारी हुआ है या नहीं, यह जाँचा नहीं गया। 14 अंक होना पहचान प्रमाणित नहीं करता।',
         action: 'पोर्टल पर स्वयं पुष्टि करें।',
         source: 'N1',
+      });
+    }
+    if (dobPresent) {
+      // Validity and eligibility are different questions; only the first is answered here.
+      results.push({
+        ruleId: 'dob-eligibility-unchecked',
+        fieldId: null,
+        severity: 'unchecked',
+        message: 'जन्म तारीख से आयु या पात्रता नहीं जाँची गई: केवल तारीख की वैधता देखी गई है, कोई न्यूनतम या अधिकतम आयु नहीं मानी गई।',
+        action: 'पात्रता की शर्तें पोर्टल के अपने निर्देशों से स्वयं देखें।',
+        source: null,
       });
     }
     if (ifscPresent) {

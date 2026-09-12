@@ -69,8 +69,12 @@ The panel injects `reader.js` into its own tab with `chrome.scripting.executeScr
 and pulls a snapshot. The reader lists supported visible controls with their
 labels, associated instructions, native constraints, options and current values.
 It reads a radio group as one choice, marks hidden or disabled conditional
-fields inactive without reporting their leftover values, and records coverage
-gaps for frames, custom widgets and secret-bearing fields. Passwords, one-time
+fields inactive — listed with their labels and the choices they offer, but with
+no value and no selected option, so a leftover choice appears nowhere in a
+snapshot or a cloud payload — and records coverage gaps for frames, custom
+widgets and secret-bearing fields. Each field also names the form element that
+owns it, by a stable identifier like its own, because two id-less forms may
+carry the same control names. Passwords, one-time
 codes, CAPTCHA answers and card fields are counted, never collected. A debounced
 MutationObserver and `input`/`change` listeners push a new snapshot when the page
 changes, so an inserted or newly revealed field appears without user action.
@@ -116,7 +120,15 @@ rule, including the ones deliberately left unchecked, is in
 [the source register](source-register.md). Devanagari digits are normalized one
 to one for numeric checks and the portal's acceptance of them is reported as
 unknown. No Hindi number-*word* parser is used or reused anywhere: word
-sequences are ambiguous to add up, so they are left untouched.
+sequences are ambiguous to add up, so they are left untouched, and a local
+parser for spoken dates is explicitly deferred rather than implied. A date of
+birth is checked for validity only — a real calendar date without a year zero,
+not after today, and within a native date control's own `min`/`max` — where
+"today" is the local calendar date of the machine running the check, read at
+that moment with no time-zone conversion, and injectable for tests. A native
+date control's ISO value is read as such; text controls take day/month/year.
+Every page with a mapped date of birth also states that age and eligibility
+were not decided.
 
 The interface is one React document. It shows the recognized workflow and its
 unverified support, the current field with its label, value, instructions and
@@ -128,7 +140,21 @@ page is reported as a local practice page rather than a portal.
 
 Navigation is keyed by field identifier, not position, so a value changing on
 the page keeps the current field, the revealed values and the keyboard focus
-where they were. One polite status region carries both the connection state and
+where they were. The reader's push digest includes every control's identity as
+well as its content, so a control replaced by an identical clone — a framework
+re-render — reaches the panel even though nothing reviewable changed. The panel
+then keeps the person's place only when the stand-in is unambiguous: same
+reviewed metadata within the same surviving form, or within a brand-new form
+when the whole form was re-rendered, and among identical controls the same
+place in document order while their number is unchanged. Otherwise it says the
+control was replaced or removed, asks the person to choose from the list, and
+focuses nothing in the page on a guess; a focus request that finds its control
+gone re-reads the page and retries once, against the unambiguous stand-in only.
+Everything the panel holds about a document — the reference spelling, the
+acknowledgment, the selection, revealed values, the last announcement and the
+snapshot itself — is reset the moment that document ends (navigation, reload,
+closed tab) or another document arrives; the reset happens during render, so
+no delayed callback can revive it, while a rescan of the same document keeps it. One polite status region carries both the connection state and
 what the last action did; an announcement is kept only while the page, document
 and field count are unchanged, so editing a field does not repeat it. Long digit
 identifiers are masked to their last four characters until the reader asks for
@@ -199,8 +225,13 @@ none of them: reading, navigation and validation run entirely in the browser,
 and the panel calls the service only for the health check and for a cloud step
 the person has explicitly enabled and started.
 
-Every `/v1` route sits behind a rate-limit guard, then a pilot-credential guard,
-then an explicit Zod pipe for its body. Credentials are HMAC-signed tokens that
+Every `/v1` route first bounds authentication attempts by the socket peer's
+address, verifies the parsed pilot credential, then limits the verified subject
+per route before an explicit Zod pipe checks its body. Header spacing, scheme
+case and renewed tokens for the same subject share an allowance. Forwarded
+address headers are not trusted. Both fixed-window maps hold at most 10,000
+entries, remove expired entries on the next request, and reject new keys at
+capacity instead of evicting live allowances. Credentials are HMAC-signed tokens that
 carry a subject and an expiry and are minted per participant with
 `apps/api/dist/pilot-token.js`; the extension ships no key and no shared
 permanent credential, which an automated check asserts against the built
@@ -210,7 +241,15 @@ while `/health` keeps working so the panel can still report the service state.
 
 `provider.ts` is the only file that knows about Sarvam. It holds the request
 shapes from S1–S3, one send path with a per-attempt timeout, bounded retries for
-retryable statuses, and immediate cancellation when the caller disconnects.
+retryable statuses, and cancellation tied to the caller's connection. The
+controller watches the response's `close` event before the reply is finished —
+the request stream's own `close` fires as soon as its body has been read and
+says nothing about the connection — and a caller already gone when the handler
+starts aborts before any provider request. The abort ends the attempt in
+flight including its body read, cuts a retry backoff short, and stops any
+further attempt; the listener is removed when the work ends, and the error
+filter writes nothing to a connection that is already closed. What a provider
+had already received is not recalled, and the panel says so.
 Model identifiers live in configuration. Provider replies are parsed with Zod
 before anything else looks at them, and an interpretation is additionally parsed
 against the response contract: malformed output is rejected outright rather than

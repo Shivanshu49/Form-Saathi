@@ -4,7 +4,7 @@ import {
   type FormSnapshot,
   type ReaderRequest,
 } from '@form-saathi/contracts';
-import { decideInbox } from './inbox';
+import { decideInbox } from './inbox.js';
 
 export type Connection =
   /** No tab in the panel URL: the panel was opened without activating a page. */
@@ -38,61 +38,97 @@ export function useFormReader(tabId: number | null) {
   const documentId = useRef<string | null>(null);
   // The newest snapshot accepted, so an older push can be recognised.
   const latest = useRef<FormSnapshot | null>(null);
+  const mounted = useRef(false);
+  const generation = useRef(0);
+  const attempt = useRef<object | null>(null);
+
+  const invalidate = useCallback(() => {
+    generation.current += 1;
+    attempt.current = null;
+    documentId.current = null;
+    latest.current = null;
+  }, []);
 
   /** Injects if needed and reads the form now. Returns what was read, or null. */
   const connect = useCallback(async (): Promise<FormSnapshot | null> => {
-    if (tabId === null) return null;
-    documentId.current = null;
+    if (tabId === null || !mounted.current) return null;
+    const lifetime = generation.current;
+    const request = {};
+    const previous = latest.current;
+    attempt.current = request;
+    const current = () => mounted.current && generation.current === lifetime && attempt.current === request;
     try {
       // Needs the activeTab grant from the toolbar button. Injecting again is
       // how repeated activation and a disconnected reader both recover.
       await chrome.scripting.executeScript({ target: { tabId }, files: ['reader.js'] });
     } catch {
-      setConnection({ state: 'unsupported' });
+      if (current() && latest.current === previous) {
+        invalidate();
+        setConnection({ state: 'unsupported' });
+      }
       return null;
     }
+    if (!current()) return null;
     try {
-      const reply = readerReplySchema.parse(
-        await chrome.tabs.sendMessage(tabId, { type: 'scan', tabId } satisfies ReaderRequest),
-      );
+      const response: unknown = await chrome.tabs.sendMessage(tabId, { type: 'scan', tabId } satisfies ReaderRequest);
+      if (!current()) return null;
+      const reply = readerReplySchema.parse(response);
       if (reply.type !== 'snapshot' || reply.snapshot.tabId !== tabId) throw new Error('Unusable reply');
+      // A rescan cannot change documents or roll back a newer push accepted
+      // while it was pending. Rejected replies cannot acknowledge a review.
+      if (documentId.current !== null && reply.snapshot.documentId !== documentId.current) return null;
+      if (latest.current?.documentId === reply.snapshot.documentId
+        && reply.snapshot.sequence <= latest.current.sequence) return null;
       documentId.current = reply.snapshot.documentId;
       latest.current = reply.snapshot;
       setConnection({ state: 'ready', snapshot: reply.snapshot });
       return reply.snapshot;
     } catch {
-      setConnection({ state: 'error' });
+      if (current() && latest.current === previous) {
+        invalidate();
+        setConnection({ state: 'error' });
+      }
       return null;
     }
-  }, [tabId]);
+  }, [invalidate, tabId]);
 
   /** The user asked for a re-read, so report progress before reconnecting. */
   const read = useCallback(() => {
+    if (!mounted.current) return;
     setConnection({ state: 'reading' });
     void connect();
   }, [connect]);
 
-  const focusField = useCallback(async (fieldId: string) => {
-    if (tabId === null || documentId.current === null) return;
+  /**
+   * Focuses a control in the page. When it is gone, the form is read again and
+   * that fresh snapshot is returned, so the caller can aim at the replacement.
+   */
+  const focusField = useCallback(async (fieldId: string): Promise<{ focused: boolean; fresh: FormSnapshot | null }> => {
+    const missed = { focused: false, fresh: null };
+    if (tabId === null || documentId.current === null || !mounted.current) return missed;
+    const lifetime = generation.current;
+    const requested = documentId.current;
+    const current = () => mounted.current && generation.current === lifetime && documentId.current === requested;
     try {
       const reply = readerReplySchema.parse(await chrome.tabs.sendMessage(tabId, {
         type: 'focus', tabId, documentId: documentId.current, fieldId,
       } satisfies ReaderRequest));
+      if (!current()) return missed;
+      if (reply.type === 'focus-result' && reply.result === 'focused') return { focused: true, fresh: null };
       // The field moved or the page changed underneath: read the form again.
-      if (reply.type !== 'focus-result' || reply.result !== 'focused') await connect();
+      return { focused: false, fresh: await connect() };
     } catch {
-      documentId.current = null;
-      setConnection({ state: 'error' });
+      if (current()) {
+        invalidate();
+        setConnection({ state: 'error' });
+      }
+      return missed;
     }
-  }, [connect, tabId]);
-
-  // Connecting to the tab's content script is exactly the external system an
-  // effect is for; every state change below happens after an await.
-  // oxlint-disable-next-line react/set-state-in-effect
-  useEffect(() => { void connect(); }, [connect]);
+  }, [connect, invalidate, tabId]);
 
   useEffect(() => {
     if (tabId === null) return;
+    mounted.current = true;
     const onMessage = (message: unknown, sender: chrome.runtime.MessageSender) => {
       const decision = decideInbox(message, sender, {
         runtimeId: chrome.runtime.id,
@@ -105,30 +141,32 @@ export function useFormReader(tabId: number | null) {
       latest.current = decision.snapshot;
       setConnection({ state: 'ready', snapshot: decision.snapshot });
     };
-    chrome.runtime.onMessage.addListener(onMessage);
-    return () => chrome.runtime.onMessage.removeListener(onMessage);
-  }, [connect, tabId]);
-
-  useEffect(() => {
-    if (tabId === null) return;
     const onRemoved = (closed: number) => {
       if (closed !== tabId) return;
-      documentId.current = null;
+      invalidate();
       setConnection({ state: 'closed' });
     };
     const onUpdated = (updated: number, change: chrome.tabs.OnUpdatedInfo) => {
       if (updated !== tabId || change.status !== 'loading') return;
       // Reload or navigation: drop the values read from the previous document.
-      documentId.current = null;
+      invalidate();
       setConnection({ state: 'stale' });
     };
+    chrome.runtime.onMessage.addListener(onMessage);
     chrome.tabs.onRemoved.addListener(onRemoved);
     chrome.tabs.onUpdated.addListener(onUpdated);
+    // Register lifecycle listeners before starting the first asynchronous read.
+    // connect updates state only after Chrome answers.
+    // oxlint-disable-next-line react/set-state-in-effect
+    void connect();
     return () => {
+      mounted.current = false;
+      invalidate();
+      chrome.runtime.onMessage.removeListener(onMessage);
       chrome.tabs.onRemoved.removeListener(onRemoved);
       chrome.tabs.onUpdated.removeListener(onUpdated);
     };
-  }, [tabId]);
+  }, [connect, invalidate, tabId]);
 
   // `rescan` reads again without a loading state, so nothing on screen moves.
   return { connection, read, rescan: connect, focusField };

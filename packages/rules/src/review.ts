@@ -108,6 +108,7 @@ const PERMANENT_LIMITS = new Set([
   'ifsc-branch-unchecked',
   'aadhaar-unchecked',
   'aadhaar-eid-unchecked',
+  'dob-eligibility-unchecked',
 ]);
 
 export function summarizeReview(

@@ -136,7 +136,8 @@ given a `WXT_` or `VITE_` prefix: that would compile them into the extension.
 Model names and limits are environment values too; see `.env.example`. A shared
 deployment also needs HTTPS, its own origin in `apps/extension/config.ts`, and
 the live provider checks listed in [testing.md](testing.md), which have **not**
-been run.
+been run. A reviewable deployment package — Caddy TLS termination, a systemd
+unit and the distribution steps — is in [`deploy/`](../deploy/README.md).
 
 In the panel, a person turns the cloud feature on under **क्लाउड सुविधा**, pastes
 their credential, and the **बोलकर बताएँ** section offers recording for editable,

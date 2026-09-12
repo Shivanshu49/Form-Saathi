@@ -30,6 +30,8 @@ export const sessionSchema = z.strictObject({
   durationSeconds: z.number().int().min(1),
   /** Times a person helped: navigation, explanation or physical help. */
   assistanceEvents: count,
+  /** Panel sentences, button names or messages the participant reported unclear, by identifier. */
+  unclearWording: count,
   /** Recorded separately; never folded into the error counts. */
   captchaBlockers: count,
   outcome: z.enum(['completed', 'time-limit', 'captcha-blocked', 'technical-failure', 'participant-stopped']),
@@ -55,6 +57,7 @@ export type ConditionSummary = {
   meanFalseWarnings: number | null;
   meanMissedErrors: number | null;
   assistanceEvents: number;
+  unclearWording: number;
   captchaBlockers: number;
   byOrderPosition: Record<1 | 2 | 3, number>;
 };
@@ -77,6 +80,7 @@ export function summarize(sessions: readonly Session[]): ConditionSummary[] {
       meanFalseWarnings: mean(own.map((session) => session.falseWarnings)),
       meanMissedErrors: mean(missed),
       assistanceEvents: own.reduce((sum, session) => sum + session.assistanceEvents, 0),
+      unclearWording: own.reduce((sum, session) => sum + session.unclearWording, 0),
       captchaBlockers: own.reduce((sum, session) => sum + session.captchaBlockers, 0),
       byOrderPosition: {
         1: own.filter((session) => session.orderPosition === 1).length,
@@ -105,11 +109,11 @@ export function renderReport(sessions: readonly Session[], generatedAt: string):
     return lines.join('\n');
   }
   lines.push(
-    '| Condition | Sessions | Participants | Completed | Mean duration (s) | Mean remaining errors | Mean false warnings | Mean missed errors | Assistance events | CAPTCHA blockers (separate) |',
-    '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+    '| Condition | Sessions | Participants | Completed | Mean duration (s) | Mean remaining errors | Mean false warnings | Mean missed errors | Assistance events | Unclear wording | CAPTCHA blockers (separate) |',
+    '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
   );
   for (const row of summarize(sessions)) {
-    lines.push(`| ${row.condition} | ${row.sessions} | ${row.participants} | ${row.completed} | ${cell(row.meanDurationSeconds)} | ${cell(row.meanRemainingErrors)} | ${cell(row.meanFalseWarnings)} | ${cell(row.meanMissedErrors)} | ${row.assistanceEvents} | ${row.captchaBlockers} |`);
+    lines.push(`| ${row.condition} | ${row.sessions} | ${row.participants} | ${row.completed} | ${cell(row.meanDurationSeconds)} | ${cell(row.meanRemainingErrors)} | ${cell(row.meanFalseWarnings)} | ${cell(row.meanMissedErrors)} | ${row.assistanceEvents} | ${row.unclearWording} | ${row.captchaBlockers} |`);
   }
   lines.push('', '## Counterbalancing', '', '| Condition | 1st | 2nd | 3rd |', '| --- | --- | --- | --- |');
   for (const row of summarize(sessions)) {

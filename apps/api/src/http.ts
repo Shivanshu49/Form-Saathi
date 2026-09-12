@@ -14,7 +14,7 @@ import type { Request, Response } from 'express';
 import { z } from 'zod';
 import { apiErrorSchema, type ApiError } from '@form-saathi/contracts';
 import { CONFIG, type Config } from './config.js';
-import { verifyPilotToken, type PilotToken } from './pilot-token.js';
+import { parsePilotCredential, verifyPilotToken, type PilotToken } from './pilot-token.js';
 
 // Request validation, pilot authentication, rate limiting and safe errors.
 // Nothing here logs a body, a transcript, an audio buffer or a credential.
@@ -44,19 +44,44 @@ export class ZodBodyPipe<T extends z.ZodType> implements PipeTransform<unknown, 
 
 type PilotRequest = Request & { pilot?: PilotToken };
 
+type Window = { count: number; resetAt: number };
+const MAX_WINDOWS = 10_000;
+
+/** Lazy expiry and a hard cap: never evict a live allowance to admit a new key. */
+function consume(windows: Map<string, Window>, key: string, limit: number): void {
+  const now = Date.now();
+  // ponytail: bounded linear sweep in one process; use a shared limiter for a cluster.
+  for (const [candidate, window] of windows) {
+    if (window.resetAt <= now) windows.delete(candidate);
+  }
+  let window = windows.get(key);
+  if (!window && windows.size < MAX_WINDOWS) {
+    window = { count: 0, resetAt: now + 60_000 };
+    windows.set(key, window);
+  }
+  if (!window || window.count >= limit) {
+    throw new ApiFailure(429, 'rate_limited', 'Too many requests. Wait a minute and try again.');
+  }
+  window.count += 1;
+}
+
 @Injectable()
 export class PilotAuthGuard implements CanActivate {
+  private readonly attempts = new Map<string, Window>();
+
   constructor(@Inject(CONFIG) private readonly config: Config) {}
 
   canActivate(context: ExecutionContext): boolean {
+    const request = context.switchToHttp().getRequest<PilotRequest>();
+    // No forwarded headers or unverified tokens select a bucket. This app has
+    // no trusted-proxy configuration, so use the actual socket peer only.
+    consume(this.attempts, request.socket.remoteAddress ?? 'unknown', this.config.preAuthRateLimitPerMinute);
     // Without a signing secret the service stays closed rather than open.
     if (this.config.pilotSecret === undefined) {
       throw new ApiFailure(503, 'service_not_configured', 'This deployment has no pilot credentials configured.');
     }
-    const request = context.switchToHttp().getRequest<PilotRequest>();
-    const header = request.headers.authorization ?? '';
-    const token = header.startsWith('Bearer ') ? header.slice('Bearer '.length).trim() : '';
-    const pilot = token === '' ? null : verifyPilotToken(token, this.config.pilotSecret);
+    const token = parsePilotCredential(request.headers.authorization);
+    const pilot = token === null ? null : verifyPilotToken(token, this.config.pilotSecret);
     if (pilot === null) {
       throw new ApiFailure(401, 'unauthorized', 'A valid, unexpired pilot credential is required.');
     }
@@ -65,11 +90,9 @@ export class PilotAuthGuard implements CanActivate {
   }
 }
 
-type Window = { count: number; resetAt: number };
-
 /**
- * Fixed window per credential, falling back to the client address before a
- * credential is verified. In memory, so it bounds one process, not a cluster.
+ * Fixed window per verified pilot identity and route. Renewing or reformatting
+ * a credential cannot create another allowance for the same identity.
  */
 @Injectable()
 export class RateLimitGuard implements CanActivate {
@@ -79,22 +102,10 @@ export class RateLimitGuard implements CanActivate {
 
   canActivate(context: ExecutionContext): boolean {
     const request = context.switchToHttp().getRequest<PilotRequest>();
-    const header = request.headers.authorization ?? '';
-    // Hashed: a raw credential never sits in a map key or an error.
-    const caller = header === ''
-      ? request.ip ?? 'unknown'
-      : createHash('sha256').update(header).digest('hex').slice(0, 16);
-    const key = `${caller}:${request.path}`;
-    const now = Date.now();
-    for (const [candidate, window] of this.windows) {
-      if (window.resetAt <= now) this.windows.delete(candidate);
-    }
-    const window = this.windows.get(key) ?? { count: 0, resetAt: now + 60_000 };
-    window.count += 1;
-    this.windows.set(key, window);
-    if (window.count > this.config.rateLimitPerMinute) {
-      throw new ApiFailure(429, 'rate_limited', 'Too many requests. Wait a minute and try again.');
-    }
+    if (!request.pilot) throw new ApiFailure(401, 'unauthorized', 'A verified pilot identity is required.');
+    const caller = createHash('sha256').update(request.pilot.subject).digest('hex');
+    // The handler is stable even if Express accepts a differently cased path.
+    consume(this.windows, `${caller}:${context.getHandler().name}`, this.config.rateLimitPerMinute);
     return true;
   }
 }
@@ -146,6 +157,9 @@ export class SafeErrorFilter implements ExceptionFilter {
       // Class and status only: never the message, which may quote a request.
       console.error(`Unhandled ${exception instanceof Error ? exception.name : 'error'} on ${host.switchToHttp().getRequest<Request>().path}`);
     }
+    // The caller has gone, or was answered already: nothing is written to a
+    // closed connection, so a cancellation never turns into a second reply.
+    if (response.destroyed || response.writableEnded) return;
     response.status(status).json(body);
   }
 }

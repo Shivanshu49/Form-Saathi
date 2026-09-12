@@ -47,7 +47,7 @@ export default function Results() {
                 <tr className="border-b-2 border-line text-left">
                   <th scope="col" className="py-2 pr-3">स्थिति</th><th scope="col" className="py-2 pr-3">सत्र</th><th scope="col" className="py-2 pr-3">प्रतिभागी</th>
                   <th scope="col" className="py-2 pr-3">पूरे</th><th scope="col" className="py-2 pr-3">औसत अवधि (s)</th><th scope="col" className="py-2 pr-3">औसत बची त्रुटियाँ</th>
-                  <th scope="col" className="py-2 pr-3">औसत झूठी चेतावनियाँ</th><th scope="col" className="py-2 pr-3">औसत छूटी त्रुटियाँ</th><th scope="col" className="py-2 pr-3">सहायता</th><th scope="col" className="py-2">CAPTCHA (अलग)</th>
+                  <th scope="col" className="py-2 pr-3">औसत झूठी चेतावनियाँ</th><th scope="col" className="py-2 pr-3">औसत छूटी त्रुटियाँ</th><th scope="col" className="py-2 pr-3">सहायता</th><th scope="col" className="py-2 pr-3">अस्पष्ट शब्द</th><th scope="col" className="py-2">CAPTCHA (अलग)</th>
                 </tr>
               </thead>
               <tbody>
@@ -57,7 +57,7 @@ export default function Results() {
                     <td className="py-2 pr-3">{row.sessions}</td><td className="py-2 pr-3">{row.participants}</td><td className="py-2 pr-3">{row.completed}</td>
                     <td className="py-2 pr-3">{cell(row.meanDurationSeconds)}</td><td className="py-2 pr-3">{cell(row.meanRemainingErrors)}</td>
                     <td className="py-2 pr-3">{cell(row.meanFalseWarnings)}</td><td className="py-2 pr-3">{cell(row.meanMissedErrors)}</td>
-                    <td className="py-2 pr-3">{row.assistanceEvents}</td><td className="py-2">{row.captchaBlockers}</td>
+                    <td className="py-2 pr-3">{row.assistanceEvents}</td><td className="py-2 pr-3">{row.unclearWording}</td><td className="py-2">{row.captchaBlockers}</td>
                   </tr>
                 ))}
               </tbody>

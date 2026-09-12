@@ -46,8 +46,9 @@ Tab to the reference input and type `ARUN DEV`. The review now reads
 names the month's real length; the name result shows both spellings and says
 spelling is not decided by speech. Point at the source line (`E1 मद 7`) and
 the pack line: "नियम पैक eci-form6-new-voter 1.0 … का लाइव परीक्षण बाकी है."
-Note what is listed under **जाँचा नहीं गया** — PIN/district agreement, the frame
-— and say plainly that this is not approval.
+Note what is listed under **जाँचा नहीं गया** — PIN/district agreement, the frame,
+and "जन्म तारीख से आयु या पात्रता नहीं जाँची गई" — and say plainly that this is
+not approval: the date is checked for validity only, never for eligibility.
 
 **4. One optional Hindi speech suggestion (2:30–3:20).**
 *Only if the service is configured.* In **क्लाउड सुविधा**, read the consent
@@ -57,7 +58,10 @@ press **रोकें और भेजें**. Show the transcript in its edi
 **इस पाठ को समझें**, and show the suggestion with its local check. Say: the
 panel copies it to the clipboard on request; it never types into the page.
 *If not configured:* press the button anyway and show the honest 503 message,
-then continue — navigation and checks are unaffected.
+then continue — navigation and checks are unaffected. *If the service is slow:*
+press **रद्द करें** after sending; the panel says the request was cancelled, the
+server stops its own request to the provider, and what the provider had already
+received is not recalled.
 
 **5. Manual correction on the original form (3:20–4:00).**
 From the district result press **फ़ील्ड पर जाएँ**, type `लखनऊ` in the page

@@ -1,12 +1,17 @@
 import { defineConfig } from '@playwright/test';
 
+// The `live` project talks to the real provider through the service Playwright
+// starts from `.env`; it exists only when FORM_SAATHI_LIVE=1 is set, so an
+// ordinary run never reaches Sarvam and never reports a skipped live test.
+const live = process.env['FORM_SAATHI_LIVE'] === '1';
+
 export default defineConfig({
   testDir: './tests/browser',
   workers: 1,
   retries: 0,
   reporter: 'list',
   projects: [
-    { name: 'extension', testMatch: ['extension.spec.ts', 'reader.spec.ts'] },
+    { name: 'extension', testMatch: ['extension.spec.ts', 'reader.spec.ts', 'lifecycle.spec.ts'] },
     {
       name: 'practice', testMatch: 'practice.spec.ts',
       use: { channel: 'chromium', baseURL: 'http://127.0.0.1:4173' },
@@ -15,6 +20,7 @@ export default defineConfig({
       name: 'web', testMatch: 'web.spec.ts',
       use: { channel: 'chromium', baseURL: 'http://127.0.0.1:3100' },
     },
+    ...(live ? [{ name: 'live', testMatch: 'live-sarvam.spec.ts' }] : []),
   ],
   webServer: [
     {

@@ -121,6 +121,9 @@ runs only the practice project. `npm test` runs Vitest unit and API integration
 checks; each also has a separate `test:unit` or `test:integration` command.
 
 `typecheck` runs TypeScript `--noEmit` for all workspaces, fixtures and test/config files.
+Live checks against the real provider are prepared, not run: see
+[docs/live-verification.md](docs/live-verification.md) for the commands, the
+secure key configuration, and the portal field-inventory procedure.
 A successful WXT bundle alone does not establish type correctness. See
 [test evidence and the manual Chrome/NVDA checklist](docs/testing.md).
 
@@ -133,7 +136,8 @@ npm run package:pilot        # apps/extension/.output/form-saathiextension-0.1.0
 
 [Release notes](docs/release.md) cover the package inspection, HTTPS API access
 and the extension's host permission, API deployment configuration, backend
-authentication setup and the support-status statement. [The demo script](docs/demo.md)
+authentication setup and the support-status statement; `deploy/` holds the
+reviewable HTTPS deployment package (Caddy, systemd, distribution steps). [The demo script](docs/demo.md)
 is a reproducible five-minute walkthrough. Environment variables are documented
 with placeholders in `.env.example`.
 
@@ -160,7 +164,14 @@ run**; `studies/results/` is empty and `npm run report` prints so.
 V1 never autofills, submits, intercepts Submit, or bypasses CAPTCHA. Form
 snapshots and document references stay local and temporary: reading, navigation
 and validation all run in the browser and need no server, and the snapshot and
-the reference spelling are never part of any request.
+the reference spelling are never part of any request. Everything the panel
+holds about a page — the reference spelling, the acknowledgment, the selected
+field, revealed values and the snapshot — ends when that page navigates,
+reloads or its tab closes. Date-of-birth checks are validity only: a real
+calendar date, not after today by the browser's local date, and within a native
+date control's own bounds; no age or eligibility rule is applied. Spoken Hindi
+number words are not interpreted locally; that is deferred, and a spoken date
+reaches the panel only as a suggestion from the consented service.
 
 Separately, with the cloud feature switched on, three kinds of request leave
 the browser, each only on the person's own action: a recording they stop and
@@ -170,9 +181,11 @@ value), for interpretation; and a help topic name, for generic help audio.
 Raw audio cannot be redacted, and page labels or instructions are sent as the
 page wrote them, so none of this is guaranteed to be free of personal
 information — which is why identifier and secret fields never offer recording.
-Cancelling before the upload discards the recording; cancelling afterwards only
-refuses the reply, and switching the feature off stops any recording and
-request in progress. Sarvam operations need explicit consent and a server-side
+Cancelling before the upload discards the recording. Cancelling afterwards
+makes the service abort its own request to the provider, including any retry
+wait, and the reply is refused; whatever the provider had already received is
+not recalled. Switching the feature off stops any recording and request in
+progress. Sarvam operations need explicit consent and a server-side
 key; the extension holds no provider key and no shared permanent credential,
 and no live provider call has been made yet. There is no database. The
 companion website is static guidance and filed results; it receives no form

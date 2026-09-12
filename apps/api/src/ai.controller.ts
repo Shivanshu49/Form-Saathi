@@ -1,6 +1,6 @@
-import { Body, Controller, HttpCode, Inject, Post, Req, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, HttpCode, Inject, Post, Res, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import type { Request } from 'express';
+import type { Response } from 'express';
 import {
   fieldInterpretRequestSchema,
   fieldInterpretationSchema,
@@ -89,17 +89,28 @@ function describeField(field: FieldContext): string {
   });
 }
 
-/** Aborts the provider call when the caller disconnects. */
-function callerSignal(request: Request): AbortSignal {
+/**
+ * Runs provider work that stops when the caller goes away. The request
+ * stream's own `close` fires as soon as its body has been read, so it says
+ * nothing about the connection; the response closes only when the reply is
+ * finished or the connection dropped, and `writableFinished` tells which. A
+ * caller already gone before the work starts aborts it before any provider
+ * request is made. What a provider has already received is not recalled.
+ */
+async function untilDisconnect<T>(response: Response, work: (signal: AbortSignal) => Promise<T>): Promise<T> {
   const controller = new AbortController();
-  request.on('close', () => {
-    if (request.res?.writableEnded !== true) controller.abort();
-  });
-  return controller.signal;
+  const onClose = () => { if (!response.writableFinished) controller.abort(); };
+  if (response.destroyed) controller.abort();
+  else response.once('close', onClose);
+  try {
+    return await work(controller.signal);
+  } finally {
+    response.off('close', onClose);
+  }
 }
 
 @Controller('v1')
-@UseGuards(RateLimitGuard, PilotAuthGuard)
+@UseGuards(PilotAuthGuard, RateLimitGuard)
 export class AiController {
   constructor(
     @Inject(CONFIG) private readonly config: Config,
@@ -115,7 +126,7 @@ export class AiController {
   }))
   async transcribe(
     @UploadedFile() file: UploadedAudio | undefined,
-    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
   ): Promise<TranscribeResponse> {
     if (!file || file.size === 0) {
       throw new ApiFailure(400, 'invalid_request', 'Attach one recording as the "audio" part.', ['audio']);
@@ -128,11 +139,11 @@ export class AiController {
     if (!format || !format.matches(file.buffer)) {
       throw new ApiFailure(415, 'unsupported_media', 'Send WAV, WebM, OGG, MP3, MP4 or FLAC audio.');
     }
-    const transcription = await this.provider.transcribe({
+    const transcription = await untilDisconnect(response, (signal) => this.provider.transcribe({
       bytes: file.buffer,
       filename: `recording.${format.extension}`,
       contentType: declared,
-    }, callerSignal(request));
+    }, signal));
     // The transcript is returned and forgotten: nothing stores or logs it.
     return {
       transcript: transcription.transcript.slice(0, 2000),
@@ -145,14 +156,14 @@ export class AiController {
   @HttpCode(200)
   async interpretField(
     @Body(new ZodBodyPipe(fieldInterpretRequestSchema)) body: { field: FieldContext },
-    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
   ): Promise<FieldInterpretResponse> {
-    const interpretation = await this.provider.interpret({
+    const interpretation = await untilDisconnect(response, (signal) => this.provider.interpret({
       system: FIELD_RULES,
       user: `Field data: ${describeField(body.field)}`,
       schemaName: 'field_interpretation',
       schema: fieldInterpretationSchema,
-    }, callerSignal(request));
+    }, signal));
     return { interpretation, requiresConfirmation: true };
   }
 
@@ -160,14 +171,14 @@ export class AiController {
   @HttpCode(200)
   async interpretValue(
     @Body(new ZodBodyPipe(valueInterpretRequestSchema)) body: { transcript: string; field: FieldContext },
-    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
   ): Promise<ValueInterpretResponse> {
-    const interpretation = await this.provider.interpret({
+    const interpretation = await untilDisconnect(response, (signal) => this.provider.interpret({
       system: VALUE_RULES,
       user: `Field data: ${describeField(body.field)}\nWhat the person said: ${JSON.stringify(body.transcript)}`,
       schemaName: 'value_interpretation',
       schema: valueInterpretationSchema,
-    }, callerSignal(request));
+    }, signal));
     // A choice field can only take one of its own options; an invented one is
     // downgraded rather than passed on as a suggestion.
     if (
@@ -190,10 +201,10 @@ export class AiController {
   @HttpCode(200)
   async speechHelp(
     @Body(new ZodBodyPipe(speechHelpRequestSchema)) body: { topic: HelpTopic },
-    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
   ): Promise<SpeechHelpResponse> {
     const text = HELP_TEXTS[body.topic];
-    const audio = await this.provider.synthesize(text, callerSignal(request));
+    const audio = await untilDisconnect(response, (signal) => this.provider.synthesize(text, signal));
     return { topic: body.topic, text, contentType: 'audio/wav', audio };
   }
 }

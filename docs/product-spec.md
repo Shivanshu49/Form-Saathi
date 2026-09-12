@@ -105,6 +105,22 @@ state otherwise. Government-page inspection stays with the extension; the site
 never asks for an upload and claims no affiliation, compatibility, acceptance
 or measured improvement.
 
+The 2026-09-12 audit follow-up closes the remaining findings without widening
+the scope: a control replaced by an identical one is reported as a new focus
+target and the panel keeps the person's place only when the stand-in is
+unambiguous, by form ownership and reviewed metadata, otherwise it explains and
+asks them to choose; everything document-owned — reference, acknowledgment,
+selection, revealed values, snapshot, announcement — ends with its document;
+inactive choices carry no value and no selected option anywhere; a caller's
+cancellation after upload stops the service's own provider request, its body
+read and its retry wait, with nothing written to a closed connection; and the
+date-of-birth rule rejects invalid calendar dates, year zero and future dates
+by the browser's local date, reads native date values and enforces only a date
+control's own bounds — never a minimum age, maximum age or historical cutoff.
+Local interpretation of spoken Hindi number words is explicitly **deferred**:
+the consent-gated service remains the only path from speech to a suggested
+date, which the local engine checks and the person confirms.
+
 ## Intended journey
 
 1. Open a supported form and activate Form Saathi.

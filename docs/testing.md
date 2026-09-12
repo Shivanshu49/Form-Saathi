@@ -810,3 +810,126 @@ the missing `input` listener, the colour-only links on the website).
 Not publicly deployed. Not published to the Chrome Web Store. Not tested with
 any user. No live portal workflow manually verified. No live provider request
 made. Every row of the manual NVDA checklist NOT RUN. `studies/results/` empty.
+
+## Audit follow-up verification — 2026-09-12, second pass
+
+Recorded **2026-09-12** with Node 24.21.0, npm 11.19.0 and Playwright 1.63.0's
+bundled Chromium, on the final working tree after the last edit. No dependency
+was added and the lockfile did not change. These are local automated results;
+none is live-provider, live-portal, NVDA or participant evidence.
+
+| Actual check | Result |
+| --- | --- |
+| `npm run typecheck` | Passed across all five workspaces, fixtures, tests, studies and configuration |
+| `npm run lint` | Passed with warnings treated as failures |
+| `npm test` | 101 Vitest tests passed: 56 in `packages` (5 new date-of-birth cases) and 45 in `tests/` (4 relocation, 2 error-filter and 4 caller-cancellation cases added; the timeout case now also asserts the abandoned upstream connection) |
+| `npm run test:e2e` | 52 passed in 4.6 minutes, no retries or skips: 37 extension (1 smoke, 7 isolated hook, 29 reader — 4 new), 9 practice, 6 website |
+| `npm run package:pilot` | `form-saathiextension-0.1.0-chrome.zip`, 153,630 bytes, 11 files, identical to the rebuilt `chrome-mv3` directory; SHA-256 `8e5674c9de82f5ad3072aa439544974dacdf87bd4aa1da0c8d0e573cc4824b7c` |
+| Package inspection | Five declared permissions, one host permission (`http://127.0.0.1:3000/*`), no secret, key-header, dev-server, websocket, hot-reload or source-map marker; `reader.js` has no network call |
+| axe-core | Included in the runs above: panel states, practice pages and all website pages, 0 violations |
+| Negative controls | Recorded in [the audit](audit-2026-09-12.md#negative-controls): 9 Vitest failures and 4 Playwright failures on the pre-edit tree, each on the defect its test covers |
+
+What the new automated checks establish:
+
+- **Replacement focus.** With the PIN field current, replacing it by an
+  identical clone keeps "फ़ील्ड 7 / 13" and “मूल फ़ील्ड पर जाएँ” focuses the
+  clone — after the reader's push, and with a focus request held until after
+  the replacement. Two id-less forms with the same control name resolve by
+  ownership. Identical twins with one removed and the other replaced are
+  announced as uncertain, nothing is focused, and the list still offers the
+  survivor; a removed control is announced and next/previous keep working.
+- **Document lifetime.** A reference and acknowledgment entered on ECI do not
+  reappear after navigating the same tab to NSP, including when the held
+  acknowledgment rescan is released afterwards, after a reload, and after the
+  tab closes; a re-read and an edit of the same document keep the reference.
+- **Inactive choices.** Hidden select, checkbox, radio and text controls carry
+  no value, no `selected: true` and no marker in the serialized snapshot or in
+  a meaning-request payload, and are read fresh once shown.
+- **Cancellation.** Against a controlled provider that holds its reply: a
+  client abort after a JSON body, and after a fully received recording, closes
+  the upstream request, no retry follows, the next request completes; an abort
+  during retry backoff ends the wait and prevents the retry; an uncancelled
+  held request completes; a provider timeout abandons the upstream attempt.
+  The error filter writes nothing to a destroyed connection.
+- **Dates.** Today accepted and tomorrow rejected against an injected clock,
+  year 0000 and impossible dates rejected, leap days accepted, native ISO
+  values read, native `min`/`max` enforced only on a date control, and the
+  eligibility note present as a permanent limit.
+
+### What these results do not establish
+
+The docked panel, the toolbar gesture, real speech, real model behaviour, the
+live portals' control types and form structure, and how NVDA announces the
+new relocation and date messages are all unverified. `docs/manual-nvda-checklist.md`
+gained rows F7, E5, E6, P5 and S7 for them; every row remains NOT RUN.
+
+### Live provider verification — still NOT RUN
+
+No Sarvam key was available in this session, so no live request was made. The
+adapter was compared again with the current published reference (S1–S3 in the
+register) and matches on every field name; the checklist above stands. The
+commands, cases and recording template are in
+[live-verification.md](live-verification.md): `tests/live/sarvam-live-check.ts`
+for the service → provider path and the gated Playwright `live` project for
+the extension → service → provider path. Paste their printed tables here when
+they are run.
+
+## Release preservation and external-verification preparation — 2026-09-12, third pass
+
+Recorded **2026-09-12** with Node 24.21.0, npm 11.19.0 and Playwright 1.63.0
+(Chromium build 1243). No dependency was added and the lockfile did not
+change. This pass prepared every external stage that this environment cannot
+perform and preserved the release candidate; it performed **no** live
+provider call, portal session, NVDA session, participant session or
+deployment.
+
+| Actual check | Result |
+| --- | --- |
+| `npm run typecheck` | Passed across all five workspaces, fixtures, tests, studies and configuration |
+| `npm run lint` | Passed with warnings treated as failures |
+| `npm test` | 101 Vitest tests passed: 56 in `packages`, 45 in `tests/` (the `unclearWording` measure added to the study schema and its report assertions) |
+| `npm run test:e2e` | 52 passed in 4.7 minutes, no retries, no flaky, no skipped: 37 extension (1 smoke, 7 isolated hook, 29 reader), 9 practice, 6 website |
+| `npm run package:pilot` | 153,630 bytes, 11 files, `diff -r` identical to the rebuilt `chrome-mv3` directory |
+| Package identity | SHA-256 `8e5674c9de82f5ad3072aa439544974dacdf87bd4aa1da0c8d0e573cc4824b7c` — **unchanged** from the previous pass, because this pass touched no file that enters the extension bundle |
+| Packaged manifest | `host_permissions` `["http://127.0.0.1:3000/*"]` (still the loopback origin: no HTTPS origin has been authorized), five permissions, version 0.1.0 |
+| Live provider script without a key | Exited 2 and sent nothing, as designed |
+| Playwright project listing | 0 `live` tests without `FORM_SAATHI_LIVE=1`, 3 with it |
+| `git diff --check` | Passed |
+| Dependency/toolchain files | `package.json`, `package-lock.json`, `.nvmrc`, `.node-version` unchanged |
+
+Runtime: Node 24.21.0, npm 11.19.0, Playwright 1.63.0 with its bundled
+Chrome for Testing 153.0.8010.12, on Linux x86-64.
+
+What was prepared, and where:
+
+- **Live Sarvam checks.** `tests/live/sarvam-live-check.ts` boots the compiled
+  service in-process and runs seven fictional cases (help audio, Hindi
+  transcription of an approved or synthesized recording, unambiguous date,
+  ambiguous speech, field explanation, client cancellation, failure
+  recovery), printing a table with latencies; it exits with code 2 and sends
+  nothing when `SARVAM_API_KEY` is absent, which was verified here. The
+  Playwright `live` project (`tests/browser/live-sarvam.spec.ts`) exists only
+  under `FORM_SAATHI_LIVE=1` and drives the installed extension against the
+  real service; listing showed 0 live tests without the flag and 3 with it.
+  Commands and secure key configuration: [live-verification.md](live-verification.md).
+- **Portal inventory.** The NSP FAQ v2.2 and OTR FAQ v1.4 were re-read from
+  the saved PDFs (fingerprints in the register): the route and the read-only
+  demographic, contact and parent fields are confirmed from the FAQ; no
+  control name is. The read-only console inventory, the per-control checklist
+  and the rule for turning an inventory into a separate live pack are in
+  [live-verification.md](live-verification.md). Both packs stay unverified.
+- **NVDA.** Rows S8 (consent withdrawal mid-request) and M1 (first microphone
+  prompt in the docked panel) joined the checklist; every row is NOT RUN.
+- **Pilot.** `studies/session-preparation.md` holds the accessible Hindi
+  briefing, the consent items (no audio/video without separate written
+  authorization), the pre-session tool checks and the assignment procedure;
+  the results schema gained `unclearWording`, the count of panel sentences a
+  participant reported unclear, by identifier only. `studies/results/` is
+  still empty and the report and website show that.
+- **Deployment.** `deploy/` gained the website unit, a Caddyfile for three
+  hostnames with `Authorization` and `Cookie` removed from JSON access logs, a
+  release/rollback layout, a logging policy, `smoke.sh` for health, credential
+  refusal and per-credential rate limiting, and the practice-page hosting
+  note (own hostname, because the built pages use root-relative asset paths).
+  The extension test now derives the expected host permission from
+  `apps/extension/config.ts`, so changing the origin is one edit.

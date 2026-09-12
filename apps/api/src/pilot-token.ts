@@ -19,6 +19,11 @@ export function mintPilotToken(subject: string, hours: number, secret: string): 
 
 export type PilotToken = { subject: string; expiresAt: number };
 
+/** HTTP scheme/spacing are transport syntax, never part of a credential. */
+export function parsePilotCredential(header: string | undefined): string | null {
+  return /^Bearer[ \t]+(\S+)[ \t]*$/i.exec(header ?? '')?.[1] ?? null;
+}
+
 /** Returns null for anything that is not a currently valid token. */
 export function verifyPilotToken(token: string, secret: string, now = Date.now()): PilotToken | null {
   const parts = token.split('.');
@@ -31,7 +36,7 @@ export function verifyPilotToken(token: string, secret: string, now = Date.now()
     const claims: unknown = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
     if (typeof claims !== 'object' || claims === null) return null;
     const { sub, exp } = claims as { sub?: unknown; exp?: unknown };
-    if (typeof sub !== 'string' || typeof exp !== 'number') return null;
+    if (typeof sub !== 'string' || sub.length === 0 || typeof exp !== 'number' || !Number.isSafeInteger(exp)) return null;
     if (exp * 1000 <= now) return null;
     return { subject: sub, expiresAt: exp };
   } catch {

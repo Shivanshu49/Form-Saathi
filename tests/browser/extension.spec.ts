@@ -2,6 +2,7 @@ import { chromium, expect, test } from '@playwright/test';
 import { AxeBuilder } from '@axe-core/playwright';
 import { resolve } from 'node:path';
 import { readdir, readFile } from 'node:fs/promises';
+import { API_ORIGIN } from '../../apps/extension/config.js';
 
 test('the installed extension opens its panel page and checks service accessibly', async () => {
   const extensionPath = resolve('apps/extension/.output/chrome-mv3');
@@ -27,7 +28,8 @@ test('the installed extension opens its panel page and checks service accessibly
     const manifest = await worker.evaluate(() => chrome.runtime.getManifest());
     expect(manifest.manifest_version).toBe(3);
     expect(manifest.permissions).toEqual(['sidePanel', 'activeTab', 'scripting', 'tts', 'storage']);
-    expect(manifest.host_permissions).toEqual(['http://127.0.0.1:3000/*']);
+    // One constant sets both the fetch target and the permission Chrome shows.
+    expect(manifest.host_permissions).toEqual([`${API_ORIGIN}/*`]);
     // No content script matches: the reader is injected into one activated tab.
     expect(manifest.content_scripts).toBeUndefined();
     expect(manifest.optional_host_permissions).toBeUndefined();

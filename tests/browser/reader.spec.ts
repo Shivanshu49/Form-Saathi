@@ -1,6 +1,7 @@
 import { chromium, expect, test, type BrowserContext, type Page, type Worker } from '@playwright/test';
 import { AxeBuilder } from '@axe-core/playwright';
 import { resolve } from 'node:path';
+import type { FormSnapshot } from '@form-saathi/contracts';
 
 // Chrome grants activeTab only through the real toolbar gesture, which Playwright
 // cannot perform, and a docked side panel cannot be driven either. These checks
@@ -21,6 +22,15 @@ declare global {
       tracks: { stopped: boolean }[];
       recorders: { state: string }[];
     };
+    __recorders?: {
+      state: RecordingState;
+      stops: number;
+      ondataavailable: ((event: { data: Blob }) => void) | null;
+      onstop: (() => void) | null;
+    }[];
+    __meaningReplies?: { signal: AbortSignal; resolve: (body: unknown) => void }[];
+    __scanReplies?: { hold: boolean; pending: { resolve: () => void }[] };
+    __focusReplies?: { hold: boolean; pending: (() => void)[] };
   }
 }
 
@@ -29,6 +39,7 @@ const apiError = (error: string) => ({ status: 502, json: { error, message: 'tes
 
 /** The cloud steps a person takes once per browser session. */
 async function enableCloud(panel: Page, credential = 'fs1.test-credential'): Promise<void> {
+  await expect(panel.getByRole('region', { name: 'क्लाउड सुविधा', exact: true })).toBeVisible();
   // Consent and the credential persist for the browser session, so a later
   // panel in the same run may already have them.
   if (await panel.getByRole('button', { name: 'क्लाउड सुविधा बंद करें' }).count() === 0) {
@@ -990,4 +1001,443 @@ test('an acknowledgment covers instructions, constraints and option labels, not 
   await acknowledge.click();
   await recorded();
   await expect(panel.getByRole('button', { name: 'ज़िला (बदला हुआ)' })).toBeVisible();
+});
+
+test('audit regression: cancelled recorder callbacks cannot contaminate or stop the next recording', async () => {
+  const page = await openPractice('/eci-form6.html?variant=a&case=issues');
+  const panel = await openPanel(page);
+  await enableCloud(panel);
+  await panel.getByRole('button', { name: 'मकान और सड़क (आवश्यक)' }).click();
+  await controlMicrophone(panel);
+  await panel.clock.install();
+  await panel.evaluate(() => {
+    window.__recorders = [];
+    window.MediaRecorder = class {
+      state: RecordingState = 'inactive';
+      stops = 0;
+      ondataavailable: ((event: { data: Blob }) => void) | null = null;
+      onstop: (() => void) | null = null;
+      static isTypeSupported() { return true; }
+      constructor() { window.__recorders!.push(this); }
+      start() { this.state = 'recording'; }
+      stop() { this.state = 'inactive'; this.stops += 1; }
+    } as unknown as typeof MediaRecorder;
+  });
+  const uploads: string[] = [];
+  await panel.route('**/v1/speech/transcribe', async (route) => {
+    uploads.push(route.request().postDataBuffer()!.toString('latin1'));
+    await route.fulfill({ json: { transcript: 'नई रिकॉर्डिंग', languageCode: 'hi-IN', requiresConfirmation: true } });
+  });
+  const start = panel.getByRole('button', { name: 'रिकॉर्डिंग शुरू करें' });
+  await start.click();
+  await grantMicrophone(panel);
+  await expect(panel.getByText(/रिकॉर्डिंग चल रही है/)).toBeVisible();
+  await panel.getByRole('button', { name: 'रद्द करें', exact: true }).click();
+  await start.click();
+  await grantMicrophone(panel);
+  await expect(panel.getByText(/रिकॉर्डिंग चल रही है/)).toBeVisible();
+  await panel.evaluate(() => {
+    const old = window.__recorders![0]!;
+    old.ondataavailable!({ data: new Blob(['DISCARDED-AUDIO-A']) });
+    old.onstop!();
+    old.onstop!();
+  });
+  await panel.clock.runFor(1_000);
+  await expect(panel.getByText(/रिकॉर्डिंग चल रही है — 1 सेकंड/)).toBeVisible();
+  expect((await media(panel)).tracks).toEqual([true, false]);
+  expect(await panel.evaluate(() => window.__recorders![1]!.stops)).toBe(0);
+  expect(uploads).toEqual([]);
+  // A's callbacks must not clear B's 15-second timer either.
+  await panel.clock.runFor(14_000);
+  expect(await panel.evaluate(() => window.__recorders![1]!.stops)).toBe(1);
+  await panel.evaluate(() => {
+    const current = window.__recorders![1]!;
+    current.ondataavailable!({ data: new Blob(['ONLY-AUDIO-B']) });
+    current.onstop!();
+  });
+  await expect(panel.getByLabel('सुना गया पाठ — ज़रूरत हो तो सुधारें')).toHaveValue('नई रिकॉर्डिंग');
+  expect(uploads).toHaveLength(1);
+  expect(uploads[0]).toContain('ONLY-AUDIO-B');
+  expect(uploads[0]).not.toContain('DISCARDED-AUDIO-A');
+  expect((await media(panel)).tracks).toEqual([true, true]);
+  await panel.close();
+  await page.close();
+});
+
+for (const transition of ['consent', 'remove', 'replace', 'field', 'document', 'unmount']) {
+  test(`audit regression: identifier meaning request expires after ${transition}`, async () => {
+    const page = await openPractice('/meaning-lifetime.html', `<!doctype html><html lang="hi"><head><meta charset="UTF-8"><title>Meaning lifetime</title></head><body>
+      <label for="nsp-otr">OTR संदर्भ (अभ्यास में आवश्यक)</label><input id="nsp-otr" value="90000000000001">
+      <label for="nsp-locality">स्थान</label><input id="nsp-locality" value="rural">
+      </body></html>`);
+    const panel = await openPanel(page);
+    await enableCloud(panel);
+    const identifier = panel.getByRole('button', { name: 'OTR संदर्भ (अभ्यास में आवश्यक)' });
+    await identifier.click();
+    await expect(panel.getByRole('button', { name: 'रिकॉर्डिंग शुरू करें' })).toHaveCount(0);
+    // Deliberately ignore abort when resolving: the component must also reject
+    // a late successful reply, not merely rely on fetch to reject it.
+    await panel.evaluate(() => {
+      window.__meaningReplies = [];
+      const original = window.fetch.bind(window);
+      window.fetch = (url, init) => {
+        if (!String(url).endsWith('/v1/fields/interpret')) return original(url, init);
+        return new Promise<Response>((resolve) => {
+          window.__meaningReplies!.push({ signal: init!.signal!, resolve: (body) => resolve(new Response(JSON.stringify(body), {
+            status: 200, headers: { 'content-type': 'application/json' },
+          })) });
+        });
+      };
+    });
+    await panel.getByRole('button', { name: 'इस फ़ील्ड का अर्थ पूछें' }).click();
+    await expect.poll(() => panel.evaluate(() => window.__meaningReplies!.length)).toBe(1);
+    if (transition === 'consent') await panel.getByRole('button', { name: 'क्लाउड सुविधा बंद करें' }).click();
+    if (transition === 'remove') await panel.getByRole('button', { name: 'क्रेडेंशियल हटाएँ' }).click();
+    if (transition === 'replace') {
+      await panel.getByLabel('पायलट क्रेडेंशियल').fill('fs1.replacement-fictional-credential');
+      await panel.getByRole('button', { name: 'क्रेडेंशियल सहेजें' }).click();
+    }
+    if (transition === 'field') await panel.getByRole('button', { name: 'अगला फ़ील्ड', exact: true }).click();
+    if (transition === 'document') {
+      await page.reload();
+      await expect(readerStatus(panel)).toContainText('पेज फिर से लोड हुआ');
+    }
+    if (transition === 'unmount') await panel.getByRole('button', { name: 'फ़ॉर्म फिर पढ़ें' }).click();
+    await expect.poll(() => panel.evaluate(() => window.__meaningReplies![0]!.signal.aborted), { message: transition }).toBe(true);
+    if (transition === 'document') await panel.getByRole('button', { name: 'फ़ॉर्म फिर पढ़ें' }).click();
+    await enableCloud(panel);
+    await identifier.click();
+    const reply = { interpretation: { outcome: 'suggestion', kind: 'identifier', explanation: `OLD-MEANING-${transition}`, example: null }, requiresConfirmation: true };
+    await panel.evaluate((body) => window.__meaningReplies![0]!.resolve(body), reply);
+    await panel.waitForTimeout(150);
+    await expect(panel.getByText(reply.interpretation.explanation)).toHaveCount(0);
+    await expect(readerStatus(panel)).not.toContainText('अर्थ का अनुमान मिला');
+    // Re-enabling allows a fresh text-only request, never the old one or recording.
+    await panel.getByRole('button', { name: 'इस फ़ील्ड का अर्थ पूछें' }).click();
+    await panel.evaluate((body) => window.__meaningReplies![1]!.resolve(body), {
+      ...reply, interpretation: { ...reply.interpretation, explanation: 'नया अर्थ' },
+    });
+    await expect(panel.getByText('नया अर्थ', { exact: true })).toBeVisible();
+    await expect(panel.getByRole('button', { name: 'रिकॉर्डिंग शुरू करें' })).toHaveCount(0);
+    await panel.close();
+    await page.close();
+  });
+}
+
+test('audit regression: a held NSP review rescan cannot restore or acknowledge it after ECI navigation', async () => {
+  const page = await openPractice('/nsp.html?variant=a&case=issues');
+  const panel = await openPanel(page);
+  await panel.evaluate(() => {
+    window.__scanReplies = { hold: true, pending: [] };
+    const original = chrome.tabs.sendMessage.bind(chrome.tabs);
+    chrome.tabs.sendMessage = (async (tab: number, message: unknown) => {
+      const reply: unknown = await original(tab, message);
+      if ((message as { type?: string }).type !== 'scan' || !window.__scanReplies!.hold) return reply;
+      return new Promise<unknown>((resolve) => { window.__scanReplies!.pending.push({ resolve: () => resolve(reply) }); });
+    }) as typeof chrome.tabs.sendMessage;
+  });
+  await panel.getByRole('button', { name: 'मैंने दिखाई गई समीक्षा पढ़ ली है' }).click();
+  await expect.poll(() => panel.evaluate(() => window.__scanReplies!.pending.length)).toBe(1);
+  await page.goto(`${PRACTICE}/eci-form6.html?variant=a&case=issues`);
+  await expect(readerStatus(panel)).toContainText('पेज फिर से लोड हुआ');
+  await panel.evaluate(() => { window.__scanReplies!.hold = false; });
+  await panel.getByRole('button', { name: 'फ़ॉर्म फिर पढ़ें' }).click();
+  await expect(panel.getByRole('button', { name: 'नाम — हिंदी (अभ्यास में आवश्यक)' })).toBeVisible();
+  await panel.evaluate(() => window.__scanReplies!.pending[0]!.resolve());
+  await panel.waitForTimeout(300);
+  await expect(panel.getByRole('button', { name: 'OTR संदर्भ (अभ्यास में आवश्यक)' })).toHaveCount(0);
+  await expect(panel.getByRole('region', { name: 'स्थिति', exact: true })).toContainText('पढ़ने की स्वीकृति: दर्ज नहीं।');
+  await expect(panel.getByRole('button', { name: 'नाम — हिंदी (अभ्यास में आवश्यक)' })).toBeVisible();
+  await panel.close();
+  await page.close();
+});
+
+test('audit regression: secrets are excluded before values or radio options enter a snapshot', async () => {
+  const names = ['user_otp', 'otp_code', 'captcha_response', 'card_number', 'userOTP', 'otpCode', 'captchaResponse', 'creditCardNumber', 'card-number', 'security code', 'oneTimeCode', 'OTPCode'];
+  const secretControls = names.map((name, index) => `<label for="secret-${index}">विवरण</label><input id="secret-${index}" name="${name}" value="SECRET-VALUE-${index}">`).join('');
+  const page = await openPractice('/secret-variants.html', `<!doctype html><html lang="hi"><head><meta charset="UTF-8"><title>Secret variants</title></head><body>
+    ${secretControls}
+    <input id="user_otp_code" value="SECRET-UNLABELLED">
+    <label for="hindi">ओटीपी</label><input id="hindi" aria-label="विवरण" value="SECRET-HINDI">
+    <label for="pass">विवरण</label><input id="pass" type="password" value="SECRET-PASSWORD">
+    <input id="autofill" aria-label="विवरण" autocomplete="section-checkout billing cc-number" value="SECRET-AUTOCOMPLETE">
+    <input id="login" autocomplete="one-time-code" value="SECRET-LOGIN">
+    <form id="mixed"><label><input type="radio" name="choice" value="SECRET-GROUP-FIRST">सामान्य विकल्प</label></form>
+    <label>विवरण<input type="radio" name="choice" form="mixed" id="cardNumber" checked value="SECRET-GROUP-MEMBER"></label>
+    <form><label><input type="radio" name="ordinary" checked value="one">पहला</label></form>
+    <form><label><input type="radio" name="ordinary" checked value="two">दूसरा</label></form>
+    <label><input type="radio" checked value="unnamed-one">अलग पहला</label>
+    <label><input type="radio" checked value="unnamed-two">अलग दूसरा</label>
+    <label for="postal_pin">डाक PIN</label><input id="postal_pin" name="postal_pin" inputmode="numeric" value="226001">
+    <label for="ordinary_number">सामान्य संख्या</label><input id="ordinary_number" type="number" value="42">
+    </body></html>`);
+  const panel = await openPanel(page);
+  const tabId = await tabIdOf(page);
+  const reply = await worker.evaluate(async (tab) => chrome.tabs.sendMessage(tab, { type: 'scan', tabId: tab }), tabId) as { snapshot: FormSnapshot };
+  const snapshot = reply.snapshot;
+  expect(JSON.stringify(snapshot)).not.toContain('SECRET-');
+  expect(snapshot.gaps.filter((gap) => gap.reason === 'sensitive')).toHaveLength(names.length + 6);
+  expect(snapshot.fields.map((field) => field.value)).toEqual(['one', 'two', 'unnamed-one', 'unnamed-two', '226001', '42']);
+  expect(snapshot.fields.find((field) => field.key === 'postal_pin')?.status).toBe('read');
+  await panel.close();
+  await page.close();
+});
+
+/** Holds the panel's scan replies so a rescan can be answered after the page has moved on. */
+async function holdScans(panel: Page): Promise<void> {
+  await panel.evaluate(() => {
+    window.__scanReplies = { hold: true, pending: [] };
+    const original = chrome.tabs.sendMessage.bind(chrome.tabs);
+    chrome.tabs.sendMessage = (async (tab: number, message: unknown) => {
+      const reply: unknown = await original(tab, message);
+      if ((message as { type?: string }).type !== 'scan' || !window.__scanReplies!.hold) return reply;
+      return new Promise<unknown>((resolve) => { window.__scanReplies!.pending.push({ resolve: () => resolve(reply) }); });
+    }) as typeof chrome.tabs.sendMessage;
+  });
+}
+
+/** Replaces a page control with an identical clone: same content, new element identity. */
+const replaceWithClone = (page: Page, selector: string) => page.evaluate((target) => {
+  const control = document.querySelector<HTMLInputElement>(target)!;
+  const clone = control.cloneNode(true) as HTMLInputElement;
+  clone.value = control.value;
+  control.replaceWith(clone);
+}, selector);
+
+const focusedControl = (page: Page) => page.evaluate(() => {
+  const active = document.activeElement;
+  return active instanceof HTMLInputElement ? { id: active.id, value: active.value, form: [...document.forms].indexOf(active.form!) } : null;
+});
+
+test('audit regression: an identical control replacement keeps the current field and focuses the replacement', async () => {
+  const page = await openPractice('/nsp.html?variant=a&case=issues');
+  const panel = await openPanel(page);
+  const card = panel.getByRole('region', { name: 'मौजूदा फ़ील्ड' });
+  await panel.getByRole('button', { name: 'डाक PIN (अभ्यास में आवश्यक)' }).click();
+  await expect(card).toContainText('फ़ील्ड 7 / 13');
+  await expect.poll(() => focusedControl(page)).toEqual({ id: 'nsp-pin', value: '226001', form: 0 });
+
+  // The replacement changes nothing the review sees, yet the panel learns of it.
+  await replaceWithClone(page, '#nsp-pin');
+  await expect.poll(() => focusedControl(page)).toBeNull();
+  await panel.waitForTimeout(600);
+  await expect(card).toContainText('फ़ील्ड 7 / 13');
+  await expect(card).toContainText('डाक PIN (अभ्यास में आवश्यक)');
+  await panel.getByRole('button', { name: 'मूल फ़ील्ड पर जाएँ' }).click();
+  await expect.poll(() => focusedControl(page)).toEqual({ id: 'nsp-pin', value: '226001', form: 0 });
+  await expect(card).toContainText('फ़ील्ड 7 / 13');
+  expect(await page.evaluate(() => document.activeElement?.isConnected)).toBe(true);
+
+  // A focus request already on its way when the control is replaced lands on
+  // the replacement too, instead of the panel falling back to the first field.
+  await panel.evaluate(() => {
+    window.__focusReplies = { hold: true, pending: [] };
+    const original = chrome.tabs.sendMessage.bind(chrome.tabs);
+    chrome.tabs.sendMessage = (async (tab: number, message: unknown) => {
+      if ((message as { type?: string }).type === 'focus' && window.__focusReplies!.hold) {
+        await new Promise<void>((resolve) => { window.__focusReplies!.pending.push(resolve); });
+      }
+      return original(tab, message);
+    }) as typeof chrome.tabs.sendMessage;
+  });
+  await panel.getByRole('button', { name: 'मूल फ़ील्ड पर जाएँ' }).click();
+  await expect.poll(() => panel.evaluate(() => window.__focusReplies!.pending.length)).toBe(1);
+  await replaceWithClone(page, '#nsp-pin');
+  await expect.poll(() => focusedControl(page)).toBeNull();
+  await panel.evaluate(() => { window.__focusReplies!.hold = false; window.__focusReplies!.pending[0]!(); });
+  await expect.poll(() => focusedControl(page)).toEqual({ id: 'nsp-pin', value: '226001', form: 0 });
+  await expect(card).toContainText('फ़ील्ड 7 / 13');
+  await expect(card).toContainText('डाक PIN (अभ्यास में आवश्यक)');
+  await expect(readerStatus(panel)).not.toContainText('फ़ील्ड 1 / 13');
+  await panel.close();
+  await page.close();
+});
+
+test('audit regression: duplicate names are resolved by form ownership, and an uncertain or removed control is explained, not guessed', async () => {
+  const page = await openPractice('/duplicate-names.html', `<!doctype html><html lang="hi"><head><meta charset="UTF-8"><title>Duplicate names</title></head><body>
+    <form><label>साझा नाम<input name="shared" value="one"></label></form>
+    <form><label>साझा नाम<input name="shared" value="two"></label></form>
+    <form><label>जुड़वाँ<input name="twin" value="twin-one"></label><label>जुड़वाँ<input name="twin" value="twin-two"></label></form>
+    </body></html>`);
+  const panel = await openPanel(page);
+  const card = panel.getByRole('region', { name: 'मौजूदा फ़ील्ड' });
+  await expect(readerStatus(panel)).toHaveText('4 फ़ील्ड पढ़े गए।');
+
+  // Two id-less forms, same control name and label: the second form's control stays current.
+  await panel.getByRole('button', { name: 'साझा नाम' }).nth(1).click();
+  await expect(card).toContainText('फ़ील्ड 2 / 4');
+  await expect.poll(() => focusedControl(page)).toEqual({ id: '', value: 'two', form: 1 });
+  await page.evaluate(() => {
+    const control = document.forms[1]!.elements[0] as HTMLInputElement;
+    control.replaceWith(control.cloneNode(true));
+  });
+  await expect.poll(() => focusedControl(page)).toBeNull();
+  await panel.waitForTimeout(600);
+  await expect(card).toContainText('फ़ील्ड 2 / 4');
+  await panel.getByRole('button', { name: 'मूल फ़ील्ड पर जाएँ' }).click();
+  await expect.poll(() => focusedControl(page)).toEqual({ id: '', value: 'two', form: 1 });
+
+  // Identical twins in one form, one removed and the other replaced: no
+  // stand-in is certain, so the person is told and nothing in the page is focused.
+  await panel.getByRole('button', { name: 'जुड़वाँ' }).nth(1).click();
+  await expect(card).toContainText('फ़ील्ड 4 / 4');
+  await expect.poll(() => focusedControl(page)).toEqual({ id: '', value: 'twin-two', form: 2 });
+  await page.evaluate(() => {
+    const [first, second] = document.forms[2]!.elements as unknown as HTMLInputElement[];
+    first!.parentElement!.remove();
+    second!.replaceWith(second!.cloneNode(true));
+  });
+  await expect(readerStatus(panel)).toContainText('उसकी जगह तय नहीं हो सकी');
+  await expect(card).toContainText('फ़ील्ड 1 / 3');
+  expect(await focusedControl(page)).toBeNull();
+  // The list still offers the surviving twin, and choosing it focuses exactly that control.
+  await panel.getByRole('button', { name: 'जुड़वाँ' }).click();
+  await expect(card).toContainText('फ़ील्ड 3 / 3');
+  await expect.poll(() => focusedControl(page)).toEqual({ id: '', value: 'twin-two', form: 2 });
+
+  // Removed without replacement: explained, and navigation keeps working.
+  await panel.getByRole('button', { name: 'साझा नाम' }).first().click();
+  await expect(card).toContainText('फ़ील्ड 1 / 3');
+  await page.evaluate(() => document.forms[0]!.remove());
+  await expect(readerStatus(panel)).toContainText('मौजूदा फ़ील्ड पेज से हट गया');
+  await expect(readerStatus(panel)).toHaveText(/पेज में फ़ोकस नहीं बदला गया।$/);
+  await expect(card).toContainText('फ़ील्ड 1 / 2');
+  await panel.getByRole('button', { name: 'अगला फ़ील्ड', exact: true }).click();
+  await expect(card).toContainText('फ़ील्ड 2 / 2');
+  await expect(card).toContainText('जुड़वाँ');
+  await panel.close();
+  await page.close();
+});
+
+test('audit regression: the reference, acknowledgment and snapshot end with their document, even through delayed callbacks', async () => {
+  const page = await openPractice('/eci-form6.html?variant=a&case=issues');
+  const panel = await openPanel(page);
+  const referenceInput = panel.getByLabel('दस्तावेज़ में लिखी सटीक अंग्रेज़ी वर्तनी (वैकल्पिक)');
+  const status = panel.getByRole('region', { name: 'स्थिति', exact: true });
+  const acknowledge = panel.getByRole('button', { name: 'मैंने दिखाई गई समीक्षा पढ़ ली है' });
+
+  await referenceInput.fill('ARUN DEV');
+  await expect(panel.getByText(/फ़ॉर्म में “ARUN DE” है, आपके संदर्भ में “ARUN DEV”/).first()).toBeVisible();
+  await acknowledge.click();
+  await expect(status).toContainText('पढ़ने की स्वीकृति: दर्ज —');
+  await panel.getByRole('button', { name: 'नाम — अंग्रेज़ी बड़े अक्षरों में (यदि दिया हो)' }).click();
+
+  // A second acknowledgment is left waiting for its rescan while the tab navigates.
+  await holdScans(panel);
+  await acknowledge.click();
+  await expect.poll(() => panel.evaluate(() => window.__scanReplies!.pending.length)).toBe(1);
+  await page.goto(`${PRACTICE}/nsp.html?variant=a&case=issues`);
+  await expect(readerStatus(panel)).toContainText('पेज फिर से लोड हुआ');
+  expect(await panel.locator('body').innerText()).not.toContain('ARUN DE');
+  await panel.evaluate(() => { window.__scanReplies!.hold = false; window.__scanReplies!.pending[0]!.resolve(); });
+  await panel.waitForTimeout(300);
+  expect(await panel.locator('body').innerText()).not.toContain('ARUN DE');
+  await expect(readerStatus(panel)).toContainText('पेज फिर से लोड हुआ');
+
+  await panel.getByRole('button', { name: 'फ़ॉर्म फिर पढ़ें' }).click();
+  await expect(panel.getByRole('button', { name: 'OTR संदर्भ (अभ्यास में आवश्यक)' })).toBeVisible();
+  await expect(referenceInput).toHaveValue('');
+  await expect(status).toContainText('पढ़ने की स्वीकृति: दर्ज नहीं।');
+  // The NSP name is compared to nothing: the ECI reference did not carry over.
+  await expect(panel.getByText(/आपने कोई संदर्भ वर्तनी नहीं दी/).first()).toBeVisible();
+  const text = await panel.locator('body').innerText();
+  expect(text).not.toContain('ARUN DE');
+  expect(text).not.toContain('स्वीकृति दर्ज नहीं हुई');
+  await expect(panel.getByRole('region', { name: 'मौजूदा फ़ील्ड' })).toContainText('फ़ील्ड 1 / 13');
+
+  // Ordinary same-document work keeps the reference: a re-read is not a new document.
+  await referenceInput.fill('KAVYA SAIN');
+  await expect(panel.getByText(/फ़ॉर्म में “KAVYA SAI” है, आपके संदर्भ में “KAVYA SAIN”/).first()).toBeVisible();
+  await panel.getByRole('button', { name: 'फ़ॉर्म फिर पढ़ें' }).click();
+  await expect(panel.getByRole('button', { name: 'OTR संदर्भ (अभ्यास में आवश्यक)' })).toBeVisible();
+  await expect(referenceInput).toHaveValue('KAVYA SAIN');
+  await page.getByRole('radio', { name: 'शहरी' }).check();
+  await expect(referenceInput).toHaveValue('KAVYA SAIN');
+
+  // A reload is a new document too.
+  await acknowledge.click();
+  await expect(status).toContainText('पढ़ने की स्वीकृति: दर्ज —');
+  await page.reload();
+  await expect(readerStatus(panel)).toContainText('पेज फिर से लोड हुआ');
+  await panel.getByRole('button', { name: 'फ़ॉर्म फिर पढ़ें' }).click();
+  await expect(panel.getByRole('button', { name: 'OTR संदर्भ (अभ्यास में आवश्यक)' })).toBeVisible();
+  await expect(referenceInput).toHaveValue('');
+  await expect(status).toContainText('पढ़ने की स्वीकृति: दर्ज नहीं।');
+  expect(await panel.locator('body').innerText()).not.toContain('KAVYA SAIN');
+
+  // Closing the tab ends everything the panel held about it.
+  await referenceInput.fill('KAVYA SAIN');
+  await acknowledge.click();
+  await expect(status).toContainText('पढ़ने की स्वीकृति: दर्ज —');
+  await page.close();
+  await expect(readerStatus(panel)).toContainText('जिस टैब की समीक्षा थी वह बंद हो गया');
+  expect(await panel.locator('body').innerText()).not.toContain('KAVYA SAIN');
+  await expect(panel.getByRole('button', { name: 'OTR संदर्भ (अभ्यास में आवश्यक)' })).toHaveCount(0);
+  await panel.close();
+});
+
+test('audit regression: inactive choices keep their labels but no selection, value or checked state, in the snapshot and in a cloud payload', async () => {
+  const page = await openPractice('/inactive-choices.html', `<!doctype html><html lang="hi"><head><meta charset="UTF-8"><title>Inactive choices</title></head><body>
+    <fieldset id="conditional" hidden disabled>
+      <legend>छिपा हुआ भाग</legend>
+      <label for="hidden-select">छिपा चयन</label>
+      <select id="hidden-select" name="hidden-select"><option value="choice-a">विकल्प क</option><option value="choice-b" selected>विकल्प ख</option></select>
+      <label><input type="checkbox" id="hidden-check" name="hidden-check" value="ticked" checked>छिपा चेकबॉक्स</label>
+      <fieldset><legend>छिपा रेडियो</legend>
+        <label><input type="radio" name="hidden-radio" value="radio-a">एक</label>
+        <label><input type="radio" name="hidden-radio" value="radio-b" checked>दो</label>
+      </fieldset>
+      <label for="hidden-text">छिपा पाठ</label><input id="hidden-text" name="hidden-text" value="INACTIVE-TEXT-MARKER">
+    </fieldset>
+    <label for="visible-text">दिखता पाठ</label><input id="visible-text" name="visible-text" value="VISIBLE-MARKER">
+    <button id="show" type="button">दिखाएँ</button>
+    <script>document.getElementById('show').onclick = () => { const part = document.getElementById('conditional'); part.hidden = false; part.disabled = false; };</script>
+    </body></html>`);
+  const panel = await openPanel(page);
+  const tabId = await tabIdOf(page);
+  const scan = async () => (await worker.evaluate(async (tab) => chrome.tabs.sendMessage(tab, { type: 'scan', tabId: tab }), tabId) as { snapshot: FormSnapshot }).snapshot;
+
+  const hidden = await scan();
+  const serialized = JSON.stringify(hidden);
+  expect(serialized).not.toContain('INACTIVE-TEXT-MARKER');
+  expect(serialized).not.toContain('"selected":true');
+  expect(serialized).toContain('VISIBLE-MARKER');
+  const inactive = hidden.fields.filter((field) => field.status === 'inactive');
+  expect(inactive.map((field) => [field.key, field.label, field.value])).toEqual([
+    ['hidden-select', 'छिपा चयन', null], ['hidden-check', 'छिपा चेकबॉक्स', null], ['hidden-radio', 'छिपा रेडियो', null], ['hidden-text', 'छिपा पाठ', null],
+  ]);
+  // Option metadata stays, for explaining the field; the person's choice does not.
+  expect(inactive[0]?.options.map((option) => [option.label, option.selected])).toEqual([['विकल्प क', false], ['विकल्प ख', false]]);
+  expect(inactive[2]?.options.map((option) => [option.label, option.selected])).toEqual([['एक', false], ['दो', false]]);
+  expect(hidden.fields.find((field) => field.key === 'visible-text')?.value).toBe('VISIBLE-MARKER');
+  await expect(fieldButton(panel, 'छिपा चयन')).toContainText('अभी लागू नहीं — यह फ़ील्ड छिपा या निष्क्रिय है।');
+  await expect(panel.getByRole('table').getByRole('row', { name: /^छिपा चयन/ })).not.toContainText('विकल्प ख');
+
+  // What a meaning request sends about an inactive choice: labels only, no selection.
+  await enableCloud(panel);
+  const payloads: string[] = [];
+  await panel.route('**/v1/fields/interpret', async (route) => {
+    payloads.push(route.request().postData() ?? '');
+    await route.fulfill({ json: { interpretation: { outcome: 'unknown', explanation: 'अर्थ स्पष्ट नहीं है।' }, requiresConfirmation: true } });
+  });
+  await panel.getByRole('button', { name: 'छिपा चयन' }).click();
+  await panel.getByRole('button', { name: 'इस फ़ील्ड का अर्थ पूछें' }).click();
+  await expect(panel.getByText('सेवा को अर्थ स्पष्ट नहीं लगा: अर्थ स्पष्ट नहीं है।')).toBeVisible();
+  expect(payloads).toHaveLength(1);
+  expect(payloads[0]).toContain('विकल्प ख');
+  for (const marker of ['selected', 'choice-b', 'ticked', 'radio-b', 'INACTIVE-TEXT-MARKER', 'VISIBLE-MARKER', '"value"']) {
+    expect(payloads[0]).not.toContain(marker);
+  }
+
+  // Once applicable again, the live values are read fresh.
+  await page.getByRole('button', { name: 'दिखाएँ' }).click();
+  await expect(fieldButton(panel, 'छिपा चयन')).toContainText('चुना गया: विकल्प ख');
+  const shown = await scan();
+  expect(shown.fields.map((field) => [field.key, field.status, field.value])).toEqual([
+    ['hidden-select', 'read', 'choice-b'], ['hidden-check', 'read', 'ticked'], ['hidden-radio', 'read', 'radio-b'],
+    ['hidden-text', 'read', 'INACTIVE-TEXT-MARKER'], ['visible-text', 'read', 'VISIBLE-MARKER'],
+  ]);
+  expect(shown.fields.find((field) => field.key === 'hidden-radio')?.options.map((option) => option.selected)).toEqual([false, true]);
+  await panel.close();
+  await page.close();
 });

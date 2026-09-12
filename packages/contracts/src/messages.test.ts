@@ -3,6 +3,7 @@ import { panelInboxSchema, readerReplySchema, readerRequestSchema } from './mess
 
 const field = {
   fieldId: 'f1',
+  form: 'f0',
   key: 'nsp-district',
   kind: 'select',
   label: 'जिला (अभ्यास में आवश्यक)',
