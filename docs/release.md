@@ -1,59 +1,118 @@
-# Pilot release
+# Release 0.1.0 — pilot candidate
 
-A pilot build is the production extension bundle plus a configured service. It
-is for supervised sessions on the practice forms; it must not be given to
-anyone to use on a live portal with real data until the live verification in
-[testing.md](testing.md) has actually been performed.
+Prepared 2026-09-12. This release is **prepared for deployment and review**. It
+has not been publicly deployed, not been published to the Chrome Web Store,
+and not been tested with any user. Every claim below is about the built
+artifacts and the automated checks that ran on them.
 
-## Build the extension package
+## Artifacts
+
+| Artifact | Command | Output |
+| --- | --- | --- |
+| Chrome extension package | `npm run package:pilot` | `apps/extension/.output/form-saathiextension-0.1.0-chrome.zip` (11 files, ~151 kB) |
+| API production build | `npm run build --workspace @form-saathi/api` | `apps/api/dist/` (ESM; entry `dist/main.js`, credential tool `dist/pilot-token.js`) |
+| Website production build | `npm run build:web` | `apps/web/.next/` (eight static routes, one dynamic `/results`) |
+| Practice pages | `npm run build:fixtures` | `fixtures/dist/` (three static pages) |
+
+`npm run build` produces all four. Build artifacts are git-ignored; a release is
+reproduced from a checkout with `npm ci` on Node 24.21.0.
+
+## Package inspection (performed)
+
+The zip was unpacked and inspected on 2026-09-12:
+
+| Check | Finding |
+| --- | --- |
+| Secrets | No key, key-header name, secret variable name or private-key block in any file. The extension test asserts this on every build. |
+| Host permissions | Exactly one: `http://127.0.0.1:3000/*`, the API origin. No page host, no `<all_urls>`, no `optional_host_permissions`, no `content_scripts` matches. |
+| Permissions | `sidePanel`, `activeTab`, `scripting`, `tts`, `storage` — each used, none broader than its use. |
+| Remote executable code | None. No `eval`, `new Function` or dynamic `import()`; the only `<script src>` is the bundle's own chunk; every URL in the bundle is the API origin or a W3C/React/JSON-Schema namespace constant. `reader.js` — the only code that runs inside a page — performs **no network call at all**. |
+| Development-only configuration | None. No WXT reload command, websocket, `localhost` dev server or source map. The single `localhost` string is the rules package's list of loopback hosts used to label a page as a local practice page. |
+| Network reach of the panel | Two fetch sites, both to `API_ORIGIN` from `apps/extension/config.ts`: the health check and the `/v1` routes. |
+
+## Configuring HTTPS API access
+
+The extension reaches the API only at the origin compiled into it, and Chrome
+allows that cross-origin call because the same origin is listed in the
+manifest's `host_permissions`. Both come from one constant. A verified check
+on 2026-09-12 confirmed an extension page reaches a permitted host **without
+any CORS headers from the server**, so the API needs no CORS configuration.
+
+1. Deploy the API behind TLS at a fixed origin, e.g. `https://api.example.org`.
+   The Nest process itself listens on plain HTTP on `HOST`/`PORT`; terminate
+   TLS in front of it (a reverse proxy or the platform's load balancer) and do
+   not expose the plain port publicly.
+2. Set that origin in `apps/extension/config.ts`:
+   ```ts
+   export const API_ORIGIN = 'https://api.example.org';
+   ```
+   The manifest's `host_permissions` is derived from it (`${API_ORIGIN}/*`), so
+   one edit changes both the fetch target and the permission Chrome shows.
+3. Rebuild and repackage: `npm run package:pilot`. The extension test asserts
+   the manifest's host permission equals `http://127.0.0.1:3000/*`; update
+   that assertion to the new origin in the same change.
+4. Chrome will list the new origin as the extension's site access. That is the
+   only site access it requests.
+
+## API deployment configuration
+
+Run `node --env-file-if-exists=../../.env dist/main.js` from `apps/api` (this
+is `npm run start --workspace @form-saathi/api`), on Node 24, one process per
+deployment. The rate limiter is per process; with several instances put a
+shared limiter in front. Configuration is environment only; `.env.example`
+lists every variable with a placeholder.
+
+| Variable | Required for | Notes |
+| --- | --- | --- |
+| `HOST`, `PORT` | listening | default `127.0.0.1:3000`; bind to the proxy's network, never `0.0.0.0` on a public host |
+| `PILOT_TOKEN_SECRET` | any `/v1` route | ≥16 chars. Absent ⇒ every `/v1` route answers `service_not_configured`; `/health` still works |
+| `SARVAM_API_KEY` | any `/v1` route | server-side only; never a `WXT_`/`VITE_`/`NEXT_PUBLIC_` prefix |
+| `SARVAM_*_MODEL`, `SARVAM_SPEECH_SPEAKER` | optional | defaults `saaras:v3`, `sarvam-105b`, `bulbul:v3`, `shubh` |
+| `MAX_AUDIO_BYTES`, `PROVIDER_TIMEOUT_MS`, `PROVIDER_RETRIES`, `RATE_LIMIT_PER_MINUTE` | optional | defaults 4 MiB, 20 s, 1, 20/min |
+| `SARVAM_BASE_URL` | optional | provider origin; point at a mock for rehearsal |
+
+The service stores and logs no audio, transcript, form value or reference; its
+only log lines are route mapping and the class of an unhandled error.
+
+## Backend authentication setup
+
+Every `/v1` route requires `Authorization: Bearer <pilot token>`. Tokens are
+HMAC-signed with `PILOT_TOKEN_SECRET`, carry a subject and an expiry, and hold
+no personal data. Mint one per participant, for the session's length:
 
 ```bash
-nvm use
-npm ci
-npm run typecheck && npm run lint && npm test
-npm run package:pilot
+cd apps/api && npm run build
+PILOT_TOKEN_SECRET=<the deployed secret> node dist/pilot-token.js P01 8
 ```
 
-`package:pilot` builds everything and writes the Chrome package to
-`apps/extension/.output/` as a `.zip` next to the unpacked `chrome-mv3` folder.
-Chrome does not install a zip outside the Web Store: unzip it and use **Load
-unpacked** in `chrome://extensions`, or distribute the unpacked folder. The
-manifest requests `sidePanel`, `activeTab`, `scripting`, `tts` and `storage`
-and access to the API origin in `apps/extension/config.ts`; change that origin
-and rebuild before pointing the panel at a deployed service.
+Give the printed token to the participant to paste into the panel's
+**क्लाउड सुविधा** section; it lives in Chrome's session storage and is gone
+when the browser closes. An expired, tampered or foreign token is refused with
+`unauthorized`. Rotating `PILOT_TOKEN_SECRET` invalidates every token at once.
+The extension ships no token and no key.
 
-The bundle contains no provider key and no shared credential; the extension
-check reads every built file to confirm it.
+## Support status
 
-## Deploy the service
+Three different things, kept apart everywhere in this project:
 
-Run the API on Node 24 over HTTPS with, at minimum, `SARVAM_API_KEY` and
-`PILOT_TOKEN_SECRET` set (see `.env.example`). Without the secret every `/v1`
-route stays closed. Mint one expiring credential per participant:
+| Status | What it means | Where it stands |
+| --- | --- | --- |
+| **Practice-form support** | The extension reads, navigates, checks and reviews the two fictional practice forms; automated checks pass | Established by the checks in [testing.md](testing.md) |
+| **Manually verified live support** | A named person used the extension on the real portal workflow with Windows Chrome and NVDA and recorded the result | **None.** No workflow has been verified this way |
+| **Unverified behaviour** | Both rule packs on their live portals, every manual NVDA row, every live provider call, all Hindi wording with users, all participant measures | Listed in [limitations](../apps/web/app/limitations/page.tsx), the [checklist](manual-nvda-checklist.md) and [testing.md](testing.md) |
 
-```bash
-PILOT_TOKEN_SECRET=<secret> node apps/api/dist/pilot-token.js P01 8
-```
-
-The service stores and logs no audio, transcript, form value or reference. Its
-rate limit is per process; run one process per deployment or put a shared
-limiter in front of it.
+The [source register](source-register.md) and the
+[support matrix](support-matrix.md) are the record of what each rule rests on.
 
 ## Before a session
 
-- [ ] `docs/manual-nvda-checklist.md` rows for the machine in use are actually
-  performed and recorded, not assumed.
-- [ ] The live provider checks in [testing.md](testing.md) have been run once
-  with the deployed service, and the recorded results are acceptable.
-- [ ] `fixtures/README.md` practice pages are served locally and reachable.
-- [ ] Participants are told what condition B sends to the service and that
-  raw audio is not redacted.
-- [ ] Results files start from `studies/results-template.json`.
+- [ ] Rows of `docs/manual-nvda-checklist.md` performed on the machine in use.
+- [ ] Live provider checks in [testing.md](testing.md) run once against the
+  deployed service and the results recorded.
+- [ ] Practice pages served and `NEXT_PUBLIC_PRACTICE_ORIGIN` pointed at them.
+- [ ] Participants told what condition B sends and that raw audio is not
+  redacted; results files started from `studies/results-template.json`.
 
-## What this release is not
+## Demonstration
 
-No rule pack has been tested against a live portal; every review says so. No
-provider request has been made from this repository. No participant session
-has been run and no impact number exists. The panel never fills a field,
-presses Submit or solves a CAPTCHA, and a review never means a form is
-accepted or an identity verified.
+See [demo.md](demo.md) for the reproducible five-minute script.

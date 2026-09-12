@@ -107,11 +107,11 @@ See the [source register](docs/source-register.md),
 ## Checks
 
 ```bash
-npm run typecheck
-npm run lint
-npm test
+npm run typecheck            # tsc --noEmit for all five workspaces, fixtures, tests, studies
+npm run lint                 # oxlint, warnings are failures
+npm test                     # Vitest: packages, API, AI service, inbox, report
 npx playwright install chromium --no-shell
-npm run test:e2e
+npm run test:e2e             # builds everything, then extension + practice + website in Chromium
 ```
 
 Stop servers on ports 3000 and 4173 before `test:e2e`. It builds both apps and
@@ -124,13 +124,25 @@ checks; each also has a separate `test:unit` or `test:integration` command.
 A successful WXT bundle alone does not establish type correctness. See
 [test evidence and the manual Chrome/NVDA checklist](docs/testing.md).
 
-## Pilot
+## Release 0.1.0
 
-`npm run package:pilot` builds and zips the extension; [release steps](docs/release.md)
-cover the service and credentials. The [manual Windows Chrome/NVDA checklist](docs/manual-nvda-checklist.md)
-and the [usability protocol](docs/usability-protocol.md) are written and **not run**;
-`studies/` holds the empty results template and `npm run report` prints a report
-from pseudonymous session counts only — nothing in this repository is a result.
+```bash
+npm run build                # API dist/, extension .output/chrome-mv3, website .next/, practice dist/
+npm run package:pilot        # apps/extension/.output/form-saathiextension-0.1.0-chrome.zip
+```
+
+[Release notes](docs/release.md) cover the package inspection, HTTPS API access
+and the extension's host permission, API deployment configuration, backend
+authentication setup and the support-status statement. [The demo script](docs/demo.md)
+is a reproducible five-minute walkthrough. Environment variables are documented
+with placeholders in `.env.example`.
+
+Status, stated exactly: prepared for deployment and review. **Not** publicly
+deployed, **not** on the Chrome Web Store, **not** tested with users. Practice
+forms are supported by automated checks; no live portal workflow has been
+manually verified; the [manual Windows Chrome/NVDA checklist](docs/manual-nvda-checklist.md)
+and the [usability protocol](docs/usability-protocol.md) are written and **not
+run**; `studies/results/` is empty and `npm run report` prints so.
 
 ## Workspace
 

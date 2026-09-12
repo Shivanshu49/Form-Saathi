@@ -782,3 +782,31 @@ needs `NEXT_PUBLIC_PRACTICE_ORIGIN` set and the fixtures served there. No
 participant result exists, so the results page has only been seen empty and
 with a synthetic one-session file used to exercise the loader, which is not a
 result and was not kept.
+
+## Release 0.1.0 preparation — Prompt 11
+
+Recorded **2026-09-12** with Node 24.21.0, npm 11.19.0 and Playwright
+Chromium 153.0.8010.12. No dependency was added.
+
+| Actual check | Result |
+| --- | --- |
+| `npm audit` | 0 vulnerabilities |
+| `npm run typecheck` | Passed across all five workspaces, fixtures, tests, studies and configuration |
+| `npm run lint` | Passed with warnings treated as failures |
+| `npm test` | 75 Vitest tests passed |
+| `npm run build` | Passed: API `dist/`, extension `.output/chrome-mv3`, website `.next/`, practice `dist/` |
+| `npm run test:e2e` | 29 passed: 14 extension, 9 practice, 6 website |
+| `npm run package:pilot` | `form-saathiextension-0.1.0-chrome.zip`, 11 files, rebuilt from a deleted `.output/` |
+| Package inspection | Performed by hand on the unpacked zip; findings in [release.md](release.md): no secrets, one host permission (the API origin), no remote or dynamic code, no dev-only configuration, no network calls in `reader.js` |
+| CORS / host permission | An extension page fetched a permitted host that sent no CORS headers and received `ok: true`; the API needs no CORS configuration |
+| `git` | Seven stage commits pushed to `origin/main` at `cca0231`; the release-preparation commit follows |
+
+No release-blocking failure remained. Two defects found during earlier stages
+and fixed before this release are recorded above (the `Number(null)` tab id,
+the missing `input` listener, the colour-only links on the website).
+
+### Not done, stated plainly
+
+Not publicly deployed. Not published to the Chrome Web Store. Not tested with
+any user. No live portal workflow manually verified. No live provider request
+made. Every row of the manual NVDA checklist NOT RUN. `studies/results/` empty.

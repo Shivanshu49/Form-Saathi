@@ -86,6 +86,14 @@ Passwords, OTPs, CAPTCHA, uploads and cloud processing are absent. Fictional
 page preloading is not an extension autofill feature. No extension writes into
 these pages and no application is submitted.
 
+## Status vocabulary
+
+| Term | Meaning here |
+| --- | --- |
+| Practice-form support | Established by automated checks on the two fictional forms. This is the only support this release has. |
+| Manually verified live support | A recorded session by a named tester on the real workflow with Windows Chrome and NVDA. **None exists.** |
+| Unverified | Everything else: both packs on their portals, all manual NVDA rows, all live provider calls. |
+
 ## Rule packs 1.0
 
 Both packs live in `packages/rules/src/packs.ts`, version **1.0**, reviewed
