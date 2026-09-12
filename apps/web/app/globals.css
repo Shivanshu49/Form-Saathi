@@ -1,0 +1,20 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Nirmala UI", "Noto Sans Devanagari", "Mangal", system-ui, sans-serif;
+  --color-ink: #192f30;
+  --color-paper: #f6f3eb;
+  --color-card: #fffcf5;
+  --color-line: #b8c3bb;
+  --color-teal: #125a54;
+  --color-amber: #886221;
+  --color-focus: #a94618;
+}
+
+html { color-scheme: light; font-size: 18px; }
+body { margin: 0; background: var(--color-paper); color: var(--color-ink); line-height: 1.65; }
+:focus-visible { outline: .2rem solid var(--color-focus); outline-offset: .2rem; }
+/* Preflight strips underlines; links inside text must not rely on colour alone. */
+main a:not(.no-underline) { text-decoration: underline; text-underline-offset: .2em; }
+main a:not(.no-underline):hover { text-decoration-thickness: .15em; }
+@media (forced-colors: active) { .bordered { border: 1px solid CanvasText; } }
