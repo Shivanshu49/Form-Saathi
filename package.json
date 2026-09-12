@@ -3,23 +3,40 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=24.21.0 <25", "npm": ">=11.19.0 <12" },
+  "engines": {
+    "node": ">=24.21.0 <25",
+    "npm": ">=11.19.0 <12"
+  },
   "packageManager": "npm@11.19.0",
-  "workspaces": ["packages/contracts", "packages/rules", "apps/api", "apps/extension"],
+  "workspaces": [
+    "packages/contracts",
+    "packages/rules",
+    "apps/api",
+    "apps/extension",
+    "apps/web"
+  ],
   "scripts": {
     "postinstall": "npm run build:shared && npm run prepare --workspace @form-saathi/extension",
     "dev": "npm run build:shared && concurrently --kill-others --names shared,api,extension \"npm:dev:shared\" \"npm:dev:api\" \"npm:dev:extension\"",
     "dev:shared": "tsc -b packages/contracts packages/rules --watch --preserveWatchOutput",
     "dev:api": "npm run dev --workspace @form-saathi/api",
     "dev:extension": "npm run dev --workspace @form-saathi/extension",
+    "dev:fixtures": "vite --config fixtures/vite.config.ts",
+    "build:fixtures": "vite build --config fixtures/vite.config.ts",
+    "preview:fixtures": "vite preview --config fixtures/vite.config.ts",
     "build:shared": "tsc -b packages/contracts packages/rules",
-    "build": "npm run build:shared && npm run build --workspace @form-saathi/api && npm run build --workspace @form-saathi/extension",
+    "build": "npm run build:shared && npm run build --workspace @form-saathi/api && npm run build --workspace @form-saathi/extension && npm run build:fixtures && npm run build:web",
     "typecheck": "npm run build:shared && npm run typecheck --workspaces && npm run build --workspace @form-saathi/api && tsc --noEmit -p tsconfig.tools.json",
     "lint": "oxlint --deny-warnings",
     "test": "npm run test:unit && npm run test:integration",
     "test:unit": "npm run build:shared && vitest run packages",
-    "test:integration": "npm run build:shared && npm run build --workspace @form-saathi/api && vitest run tests/api.integration.test.ts",
-    "test:e2e": "npm run build && playwright test"
+    "test:integration": "npm run build:shared && npm run build --workspace @form-saathi/api && vitest run tests",
+    "test:e2e": "npm run build && playwright test",
+    "test:fixtures": "npm run build:fixtures && playwright test --project practice",
+    "report": "node studies/report.ts",
+    "package:pilot": "npm run build && npm run zip --workspace @form-saathi/extension",
+    "dev:web": "npm run dev --workspace @form-saathi/web",
+    "build:web": "npm run build --workspace @form-saathi/web"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.13.0",
@@ -32,6 +49,8 @@
     "vitest": "5.0.0"
   },
   "overrides": {
-    "@nestjs/platform-express": { "multer": "2.3.0" }
+    "@nestjs/platform-express": {
+      "multer": "2.3.0"
+    }
   }
 }

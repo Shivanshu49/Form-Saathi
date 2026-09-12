@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="hi">
+<head>
+  <meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="referrer" content="no-referrer" />
+  <title>NSP सामान्य जानकारी — केवल अभ्यास</title>
+  <link rel="stylesheet" href="./style.css" /><script type="module" src="./practice.ts"></script>
+</head>
+<body data-workflow="nsp">
+  <a class="skip" href="#practice-form">अभ्यास फ़ॉर्म पर जाएँ</a>
+  <header><a class="brand" href="./index.html">फ़ॉर्म साथी / अभ्यास</a><span>लाइव समर्थन: असत्यापित</span></header>
+  <main>
+    <p class="eyebrow" lang="en">01 / NSP · AY 2026–27 · GENERAL INFORMATION</p>
+    <h1>NSP: सामान्य जानकारी का अभ्यास</h1>
+    <div class="notice"><p><strong>केवल प्रदर्शन। यह सरकारी पोर्टल नहीं है।</strong></p><p>काल्पनिक प्रोफ़ाइल। अपनी निजी जानकारी न डालें। यह पूर्ण छात्रवृत्ति आवेदन नहीं है।</p></div>
+    <p>इच्छित चरण: <span lang="en">Apply For Scholarship → Basic Information → General Information</span>। वर्तमान FAQ चरण बताता है; फ़ील्ड का सीमित नमूना पुराने 2024–25 मैनुअल से प्रेरित है। वास्तविक फ़ॉर्म का परीक्षण बाकी है।</p>
+    <div class="layout">
+      <div>
+        <h2 id="profile-label">अभ्यास प्रोफ़ाइल लोड हो रही है</h2>
+        <noscript><p>प्रोफ़ाइल और बदलते फ़ील्ड के लिए JavaScript चालू करें।</p></noscript>
+        <form id="practice-form" aria-labelledby="profile-label" autocomplete="off" novalidate tabindex="-1">
+          <fieldset>
+            <legend>1. OTR से आई जानकारी — केवल पढ़ें</legend>
+            <p class="help">वर्तमान NSP FAQ के अनुसार नाम, लिंग और जन्म तारीख OTR से ताज़ा होते हैं। इस अभ्यास में ये फ़ील्ड सीधे नहीं बदलते। संदर्भ से अंतर होने पर उसकी पुष्टि करें।</p>
+            <label for="nsp-name">अंग्रेज़ी नाम — केवल पढ़ें</label>
+            <input id="nsp-name" name="nsp-name" readonly aria-describedby="name-help" lang="en" />
+            <span class="help" id="name-help">काल्पनिक संदर्भ में दी गई अंग्रेज़ी वर्तनी से तुलना करें।</span>
+            <label for="nsp-dob">जन्म तारीख — केवल पढ़ें</label>
+            <input id="nsp-dob" name="nsp-dob" readonly aria-describedby="dob-help" />
+            <span class="help" id="dob-help">दिन/महीना/वर्ष। असंभव तारीख यहाँ जानबूझकर परीक्षण के लिए रखी जा सकती है; ऐसा लाइव व्यवहार सत्यापित नहीं है।</span>
+            <label for="nsp-gender">लिंग — केवल पढ़ें</label><input id="nsp-gender" name="nsp-gender" readonly />
+          </fieldset>
+          <fieldset>
+            <legend>2. पते का सीमित अभ्यास</legend>
+            <p class="help">इस खंड के आवश्यक चिह्न अभ्यास की मान्यताएँ हैं; 2026–27 के लाइव नियम सत्यापित नहीं हैं।</p>
+            <label for="nsp-state">राज्य — केवल पढ़ें</label><input id="nsp-state" name="nsp-state" readonly />
+            <label for="nsp-district">जिला (अभ्यास में आवश्यक)</label>
+            <select id="nsp-district" name="nsp-district" required><option value="">जिला चुनें</option><option value="lucknow">लखनऊ</option><option value="kanpur">कानपुर नगर</option></select>
+            <label for="nsp-address">मकान और सड़क (अभ्यास में आवश्यक)</label><input id="nsp-address" name="nsp-address" required />
+            <label for="nsp-pin">डाक PIN (अभ्यास में आवश्यक)</label><input id="nsp-pin" name="nsp-pin" inputmode="numeric" pattern="[0-9]{6}" required aria-describedby="pin-help" />
+            <span class="help" id="pin-help">इस अभ्यास में 6 अंक। PIN और जिले का वास्तविक मिलान यहाँ नहीं जाँचा जाता।</span>
+            <fieldset>
+              <legend>क्षेत्र का प्रकार (अभ्यास में आवश्यक)</legend>
+              <label class="radio-label"><input id="nsp-locality-rural" type="radio" name="nsp-locality" value="rural" required />ग्रामीण</label>
+              <label class="radio-label"><input id="nsp-locality-urban" type="radio" name="nsp-locality" value="urban" required />शहरी</label>
+              <label class="radio-label"><input id="nsp-locality-other-choice" type="radio" name="nsp-locality" value="other" required />अन्य</label>
+            </fieldset>
+            <fieldset id="conditional-fields" hidden disabled>
+              <legend>अन्य क्षेत्र का विवरण</legend>
+              <label for="nsp-locality-other">क्षेत्र लिखें (अन्य चुनने पर अभ्यास में आवश्यक)</label><input id="nsp-locality-other" name="nsp-locality-other" required aria-describedby="locality-help" />
+              <span class="help" id="locality-help">यह बदलता हुआ खंड केवल परीक्षण की मान्यता है; मैनुअल से इसका नियम स्थापित नहीं होता।</span>
+            </fieldset>
+          </fieldset>
+          <fieldset>
+            <legend>3. अभ्यास के लिए जोड़े गए फ़ील्ड</legend>
+            <label for="nsp-otr">OTR संदर्भ (अभ्यास में आवश्यक)</label><input id="nsp-otr" name="nsp-otr" inputmode="numeric" pattern="[0-9]{14}" required aria-describedby="otr-help" />
+            <span class="help" id="otr-help">NSP के अनुसार OTR 14 अंकों का अलग पहचान क्रमांक है; यह Aadhaar नहीं है। इस चरण में यह संपादन योग्य फ़ील्ड केवल अभ्यास के लिए जोड़ा गया है।</span>
+            <label for="nsp-detail">विवरण 2</label><input id="nsp-detail" name="nsp-detail" aria-describedby="detail-help" />
+            <span class="help" id="detail-help">जानबूझकर अस्पष्ट अभ्यास लेबल। केवल अंकों को देखकर इसका अर्थ या पहचान प्रकार न मानें।</span>
+            <button id="add-note" type="button" class="secondary" aria-expanded="false" aria-controls="dynamic-fields">अतिरिक्त अभ्यास फ़ील्ड जोड़ें</button>
+            <div id="dynamic-fields"></div>
+            <template id="note-template"><label for="nsp-note">अभ्यास टिप्पणी (वैकल्पिक)</label><input id="nsp-note" name="nsp-note" /></template>
+          </fieldset>
+          <section aria-labelledby="frame-heading" class="panel">
+            <h2 id="frame-heading">कवरेज की सीमा: अभ्यास फ़्रेम</h2>
+            <p id="frame-help">यह अलग, sandbox किया हुआ स्थानीय फ़्रेम इस अभ्यास की समर्थित फ़ील्ड सूची से बाहर है। इसकी सामग्री को “जाँचा नहीं गया” मानें। यह लाइव पोर्टल का फ़्रेम नहीं है।</p>
+            <iframe id="unsupported-frame" title="असमर्थित स्थानीय अभ्यास फ़्रेम" sandbox aria-describedby="frame-help" srcdoc="<!doctype html><html lang='hi'><head><meta charset='UTF-8'><title>अभ्यास फ़्रेम</title></head><body><main><label for='mock'>फ़्रेम में काल्पनिक टिप्पणी (वैकल्पिक)</label><input id='mock' autocomplete='off'></main></body></html>"></iframe>
+          </section>
+          <button id="reset-profile" type="button" class="secondary">बदलाव मिटाएँ और प्रोफ़ाइल फिर खोलें</button>
+          <output id="practice-status" aria-live="polite">बदलाव केवल इस खुले पृष्ठ में रहते हैं। कोई आवेदन नहीं भेजा जाता।</output>
+        </form>
+      </div>
+      <aside aria-label="अभ्यास विकल्प और संदर्भ">
+        <section class="panel" aria-labelledby="options-heading">
+          <h2 id="options-heading">अभ्यास चुनें</h2>
+          <label for="variant">प्रोफ़ाइल</label><select id="variant"><option value="a">A</option><option value="b">B</option></select>
+          <label for="scenario">स्थिति</label><select id="scenario"><option value="issues">सुधार का अभ्यास</option><option value="complete">भरे हुए उदाहरण</option></select>
+          <p class="help">प्रोफ़ाइल खोलने पर वर्तमान बदलाव मिटेंगे। भरे हुए उदाहरण भी पात्रता या सत्यापन नहीं बताते।</p>
+          <button id="load-profile" type="button">चुनी हुई प्रोफ़ाइल खोलें</button>
+        </section>
+        <section class="panel" aria-labelledby="reference-heading"><h2 id="reference-heading">काल्पनिक संदर्भ</h2><p>उपयोगकर्ता द्वारा दिए गए संदर्भ का नमूना। अंग्रेज़ी नाम:</p><p id="reference-name" lang="en"></p><p class="help">यह किसी असली दस्तावेज़ की प्रति नहीं है। वर्तनी भाषण से तय नहीं होती।</p></section>
+        <section class="panel" aria-labelledby="sources-heading"><h2 id="sources-heading">प्रकाशित स्रोत</h2><p><a href="https://scholarships.gov.in/Students">NSP Students</a></p><p><a href="https://scholarships.gov.in/public/FAQ/NSP_FAQsORApplicationUsermanul_V2.2.pdf">Application FAQ v2.2 (PDF)</a></p><p class="help">स्रोत 12 सितंबर 2026 को देखे गए। लाइव समर्थन असत्यापित है।</p></section>
+      </aside>
+    </div>
+  </main>
+  <footer>स्वतंत्र प्रदर्शन · कोई पात्रता, पहचान या दस्तावेज़ सत्यापन नहीं · कोई cloud processing नहीं</footer>
+</body>
+</html>

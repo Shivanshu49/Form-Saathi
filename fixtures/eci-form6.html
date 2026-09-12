@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="hi">
+<head>
+  <meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="referrer" content="no-referrer" />
+  <title>ECI Form 6 — केवल अभ्यास</title>
+  <link rel="stylesheet" href="./style.css" /><script type="module" src="./practice.ts"></script>
+</head>
+<body data-workflow="eci">
+  <a class="skip" href="#practice-form">अभ्यास फ़ॉर्म पर जाएँ</a>
+  <header><a class="brand" href="./index.html">फ़ॉर्म साथी / अभ्यास</a><span>लाइव समर्थन: असत्यापित</span></header>
+  <main>
+    <p class="eyebrow" lang="en">02 / ECI FORM 6 · SELECTED FIELDS</p>
+    <h1>Form 6: जानकारी की समीक्षा का अभ्यास</h1>
+    <div class="notice"><p><strong>केवल प्रदर्शन। यह सरकारी पोर्टल नहीं है।</strong></p><p>काल्पनिक प्रोफ़ाइल। अपनी निजी जानकारी न डालें। यह पूरा मतदाता आवेदन नहीं है।</p></div>
+    <p>प्रकाशित Form 6 के नाम, लिंग, जन्म तारीख और पते के कुछ फ़ील्ड। ऑनलाइन क्रम, लेबल और व्यवहार जाँचे नहीं गए हैं। “अभ्यास मान्यता” वाले फ़ील्ड परीक्षण के लिए जोड़े या सरल किए गए हैं।</p>
+    <div class="layout">
+      <div>
+        <h2 id="profile-label">अभ्यास प्रोफ़ाइल लोड हो रही है</h2>
+        <noscript><p>प्रोफ़ाइल और बदलते फ़ील्ड के लिए JavaScript चालू करें।</p></noscript>
+        <form id="practice-form" aria-labelledby="profile-label" autocomplete="off" novalidate tabindex="-1">
+          <fieldset>
+            <legend>1. नाम और लिंग</legend>
+            <label for="eci-name-hi">नाम — हिंदी (अभ्यास में आवश्यक)</label><input id="eci-name-hi" name="eci-name-hi" required aria-describedby="name-help" />
+            <label for="eci-name-en">नाम — अंग्रेज़ी बड़े अक्षरों में (यदि दिया हो)</label><input id="eci-name-en" name="eci-name-en" lang="en" aria-describedby="name-help" />
+            <span class="help" id="name-help">संदर्भ से अंग्रेज़ी वर्तनी की तुलना करें। प्रकाशित निर्देश एक भाषा में आवेदन की अनुमति देते हैं; इस हिंदी अभ्यास में अंग्रेज़ी नाम खाली होना त्रुटि नहीं है।</span>
+            <fieldset>
+              <legend>लिंग (आवश्यक)</legend>
+              <label class="radio-label"><input id="eci-gender-male" type="radio" name="eci-gender" value="male" required />पुरुष</label>
+              <label class="radio-label"><input id="eci-gender-female" type="radio" name="eci-gender" value="female" required />महिला</label>
+              <label class="radio-label"><input id="eci-gender-third" type="radio" name="eci-gender" value="third" required />तृतीय लिंग</label>
+            </fieldset>
+          </fieldset>
+          <fieldset>
+            <legend>2. जन्म तारीख और आयु का दस्तावेज़</legend>
+            <label for="eci-dob">जन्म तारीख (अभ्यास में आवश्यक)</label><input id="eci-dob" name="eci-dob" inputmode="numeric" required aria-describedby="dob-help" />
+            <span class="help" id="dob-help">दिन/महीना/वर्ष, जैसे 15/08/2000। यह जाँच केवल तारीख की होगी; मतदाता पात्रता तय नहीं होती।</span>
+            <fieldset>
+              <legend>आयु के दस्तावेज़ का अभ्यास विकल्प (आवश्यक)</legend>
+              <p class="help">प्रकाशित सूची का छोटा नमूना। कोई असली दस्तावेज़ अपलोड नहीं होता।</p>
+              <label class="radio-label"><input id="eci-age-proof-birth" type="radio" name="eci-age-proof" value="birth-certificate" required />जन्म प्रमाणपत्र — सूची में दिया विकल्प</label>
+              <label class="radio-label"><input id="eci-age-proof-other-choice" type="radio" name="eci-age-proof" value="other" required />सूची के दस्तावेज़ उपलब्ध नहीं — अन्य दस्तावेज़</label>
+            </fieldset>
+            <fieldset id="conditional-fields" hidden disabled>
+              <legend>अन्य आयु दस्तावेज़</legend>
+              <label for="eci-age-proof-other">दस्तावेज़ का नाम (यह विकल्प चुनने पर आवश्यक)</label><input id="eci-age-proof-other" name="eci-age-proof-other" required aria-describedby="proof-help" />
+              <span class="help" id="proof-help">Form 6 मद 7(ii) में अन्य दस्तावेज़ का नाम माँगा जाता है। नाम भरना दस्तावेज़ की स्वीकृति या सत्यता की पुष्टि नहीं है।</span>
+            </fieldset>
+          </fieldset>
+          <fieldset>
+            <legend>3. पते का सीमित अभ्यास</legend>
+            <p class="help">प्रकाशित निर्देश में पूरा पता और PIN माँगा जाता है। यहाँ कुछ पता फ़ील्ड जोड़े गए हैं और अन्य छोड़े गए हैं।</p>
+            <label for="eci-address">मकान और सड़क (आवश्यक)</label><input id="eci-address" name="eci-address" required />
+            <label for="eci-district">जिला (आवश्यक)</label><input id="eci-district" name="eci-district" required />
+            <label for="eci-state">राज्य (आवश्यक)</label><input id="eci-state" name="eci-state" required />
+            <label for="eci-pin">डाक PIN (आवश्यक)</label><input id="eci-pin" name="eci-pin" inputmode="numeric" pattern="[0-9]{6}" required aria-describedby="pin-help" />
+            <span class="help" id="pin-help">6 अंकों का प्रारूप इस अभ्यास की मान्यता है। PIN का जिले से मिलान जाँचा नहीं गया है।</span>
+            <label for="eci-email">ईमेल (यदि उपलब्ध हो; वैकल्पिक)</label><input id="eci-email" name="eci-email" type="email" aria-describedby="email-help" />
+            <span class="help" id="email-help">इस काल्पनिक प्रोफ़ाइल में ईमेल खाली छोड़ा गया है। यह अधूरी आवश्यक जानकारी नहीं है।</span>
+          </fieldset>
+          <fieldset>
+            <legend>4. अभ्यास के लिए जोड़े गए फ़ील्ड</legend>
+            <label for="eci-detail">विवरण 2</label><input id="eci-detail" name="eci-detail" aria-describedby="detail-help" />
+            <span class="help" id="detail-help">जानबूझकर अस्पष्ट अभ्यास लेबल। केवल अंकों को देखकर इसे Aadhaar या EPIC न मानें।</span>
+            <button id="add-note" type="button" class="secondary" aria-expanded="false" aria-controls="dynamic-fields">अतिरिक्त अभ्यास फ़ील्ड जोड़ें</button>
+            <div id="dynamic-fields"></div>
+            <template id="note-template"><label for="eci-note">अभ्यास टिप्पणी (वैकल्पिक)</label><input id="eci-note" name="eci-note" /></template>
+          </fieldset>
+          <section aria-labelledby="frame-heading" class="panel">
+            <h2 id="frame-heading">कवरेज की सीमा: अभ्यास फ़्रेम</h2>
+            <p id="frame-help">यह अलग, sandbox किया हुआ स्थानीय फ़्रेम इस अभ्यास की समर्थित फ़ील्ड सूची से बाहर है। इसकी सामग्री को “जाँचा नहीं गया” मानें। यह लाइव पोर्टल का फ़्रेम नहीं है।</p>
+            <iframe id="unsupported-frame" title="असमर्थित स्थानीय अभ्यास फ़्रेम" sandbox aria-describedby="frame-help" srcdoc="<!doctype html><html lang='hi'><head><meta charset='UTF-8'><title>अभ्यास फ़्रेम</title></head><body><main><label for='mock'>फ़्रेम में काल्पनिक टिप्पणी (वैकल्पिक)</label><input id='mock' autocomplete='off'></main></body></html>"></iframe>
+          </section>
+          <button id="reset-profile" type="button" class="secondary">बदलाव मिटाएँ और प्रोफ़ाइल फिर खोलें</button>
+          <output id="practice-status" aria-live="polite">बदलाव केवल इस खुले पृष्ठ में रहते हैं। कोई आवेदन नहीं भेजा जाता।</output>
+        </form>
+      </div>
+      <aside aria-label="अभ्यास विकल्प और संदर्भ">
+        <section class="panel" aria-labelledby="options-heading">
+          <h2 id="options-heading">अभ्यास चुनें</h2>
+          <label for="variant">प्रोफ़ाइल</label><select id="variant"><option value="a">A</option><option value="b">B</option></select>
+          <label for="scenario">स्थिति</label><select id="scenario"><option value="issues">सुधार का अभ्यास</option><option value="complete">भरे हुए उदाहरण</option></select>
+          <p class="help">प्रोफ़ाइल खोलने पर वर्तमान बदलाव मिटेंगे। भरे हुए उदाहरण भी पात्रता या सत्यापन नहीं बताते।</p>
+          <button id="load-profile" type="button">चुनी हुई प्रोफ़ाइल खोलें</button>
+        </section>
+        <section class="panel" aria-labelledby="reference-heading"><h2 id="reference-heading">काल्पनिक संदर्भ</h2><p>उपयोगकर्ता द्वारा दिए गए संदर्भ का नमूना। अंग्रेज़ी नाम:</p><p id="reference-name" lang="en"></p><p class="help">यह किसी असली दस्तावेज़ की प्रति नहीं है। वर्तनी भाषण से तय नहीं होती।</p></section>
+        <section class="panel" aria-labelledby="sources-heading"><h2 id="sources-heading">प्रकाशित स्रोत</h2><p><a href="https://voters.eci.gov.in/formspdf/Form_6_English.pdf">ECI Form 6 (PDF)</a></p><p><a href="https://voters.eci.gov.in/guidelines/Form-6_en.pdf">भरने के निर्देश (PDF)</a></p><p class="help">स्रोत 12 सितंबर 2026 को देखे गए। लाइव समर्थन असत्यापित है।</p></section>
+      </aside>
+    </div>
+  </main>
+  <footer>स्वतंत्र प्रदर्शन · कोई पात्रता, पहचान या दस्तावेज़ सत्यापन नहीं · कोई cloud processing नहीं</footer>
+</body>
+</html>
