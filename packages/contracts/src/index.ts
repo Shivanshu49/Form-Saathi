@@ -6,3 +6,6 @@ export const healthResponseSchema = z.strictObject({
 });
 
 export type HealthResponse = z.infer<typeof healthResponseSchema>;
+
+export * from './messages.js';
+export * from './api.js';
