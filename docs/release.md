@@ -143,6 +143,8 @@ c8c23ca..release-candidate-0.1.0` lists the snapshot commits, and
 | Item | Value |
 | --- | --- |
 | Base commit | `c8c23ca30e9e2eddf4d82fbd86035a8a31f4e9ac` |
+| Snapshot commit | `9fe8477816944c60e37777c5ba54c95bd85a5d36` — the source the package reproduces from |
+| Tag | `v0.1.0-rc1`, on the documentation commit that records these results; it changes no file that enters the bundle, so the package reproduces from the tag as well |
 | Branch | `release-candidate-0.1.0` (local; not pushed) |
 | Package | `apps/extension/.output/form-saathiextension-0.1.0-chrome.zip` |
 | Size / files | 153,630 bytes, 11 files |
@@ -170,7 +172,13 @@ sha256sum apps/extension/.output/form-saathiextension-0.1.0-chrome.zip
 An archive for review excludes what is already git-ignored — `node_modules/`,
 `dist/`, `.output/`, `.next/`, `.wxt/`, `test-results/` and `.env` — so
 `git archive` is the archive to share; it can carry no secret, no dependency
-tree and no build cache.
+tree and no build cache. Its 126 files were checked for that.
+
+**This was performed.** A clean `git archive` of
+`9fe8477816944c60e37777c5ba54c95bd85a5d36`, extracted to an empty directory
+with the same installed dependencies and built there, produced a ZIP with the
+same SHA-256 and the same 153,630 bytes as the packaged one. The package
+therefore corresponds to that commit and to no uncommitted state.
 
 ## Demonstration
 

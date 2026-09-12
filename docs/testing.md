@@ -896,6 +896,8 @@ deployment.
 | Playwright project listing | 0 `live` tests without `FORM_SAATHI_LIVE=1`, 3 with it |
 | `git diff --check` | Passed |
 | Dependency/toolchain files | `package.json`, `package-lock.json`, `.nvmrc`, `.node-version` unchanged |
+| Snapshot preserved | Committed as `9fe8477` on branch `release-candidate-0.1.0` (52 files, 3,031 insertions), tagged `v0.1.0-rc1`; not pushed |
+| Package tied to the snapshot | A clean `git archive` of `9fe8477`, extracted and built in an empty directory, produced the same SHA-256 and byte count — so the package is that commit's, not an uncommitted tree's |
 
 Runtime: Node 24.21.0, npm 11.19.0, Playwright 1.63.0 with its bundled
 Chrome for Testing 153.0.8010.12, on Linux x86-64.
