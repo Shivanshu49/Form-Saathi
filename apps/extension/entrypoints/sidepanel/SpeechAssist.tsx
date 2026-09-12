@@ -72,10 +72,11 @@ export function ServiceAccess({ session, onSession }: { session: Session; onSess
       <div className="space-y-3 border-l-4 border-amber-700 pl-4">
         <p>
           चालू करने पर: आपकी चुनी हुई रिकॉर्डिंग ट्रांसक्रिप्शन के लिए सेवा को भेजी जाती है, और आपके
-          कहने पर किसी फ़ील्ड का लेबल और निर्देश (उसका मान नहीं) अर्थ पूछने के लिए भेजे जाते हैं।
+          भेजने पर उसका पाठ, चुने हुए फ़ील्ड के लेबल, निर्देश, अनुभाग और विकल्पों के साथ (उसका मान
+          नहीं), समझने के लिए भेजा जाता है। पेज के लेबल या निर्देश में जो लिखा है वह वैसा ही जाता है।
           रिकॉर्डिंग में जो बोला गया वह पूरा जाता है — कच्ची आवाज़ से कुछ हटाया नहीं जा सकता। इसलिए
-          पहचान-संख्या और गुप्त फ़ील्ड के लिए रिकॉर्डिंग बंद रहती है। कुछ भी अपने आप फ़ॉर्म में नहीं
-          भरा जाता।
+          पहचान-संख्या और गुप्त फ़ील्ड के लिए रिकॉर्डिंग बंद रहती है। बंद करने पर चल रही रिकॉर्डिंग
+          हटा दी जाती है और चल रहे अनुरोध रद्द हो जाते हैं। कुछ भी अपने आप फ़ॉर्म में नहीं भरा जाता।
         </p>
         <button
           type="button"
@@ -149,33 +150,46 @@ export function SpeechAssist({ field, snapshot, reference, pack, session, onGoTo
   const recorder = useRef<MediaRecorder | null>(null);
   const stream = useRef<MediaStream | null>(null);
   const chunks = useRef<Blob[]>([]);
-  const discard = useRef(false);
   const request = useRef<AbortController | null>(null);
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  // One session per attempt: a permission, recorder callback, timer or reply
+  // that belongs to an earlier number may change nothing and send nothing.
+  const generation = useRef(0);
+  const awaitingPermission = useRef(false);
 
   const eligibility = speechEligibility(field, pack);
   const rule = pack?.fields.find((candidate) => candidate.key === field.key) ?? null;
   const ready = session.consent && session.token !== '';
+  const allowed = ready && eligibility.allowed;
 
   function clearTimers() {
     for (const timer of timers.current) clearTimeout(timer);
     timers.current = [];
   }
 
-  function releaseMicrophone() {
-    for (const track of stream.current?.getTracks() ?? []) track.stop();
-    stream.current = null;
-    recorder.current = null;
+  function releaseMicrophone(media: MediaStream | null = stream.current) {
+    for (const track of media?.getTracks() ?? []) track.stop();
+    if (media === stream.current) stream.current = null;
   }
 
-  // Leaving the field or the panel stops everything and sends nothing more.
-  useEffect(() => () => {
+  /** Ends the current session: nothing started before this point may still send. */
+  function invalidate() {
+    generation.current += 1;
     clearTimers();
     request.current?.abort();
-    discard.current = true;
-    if (recorder.current?.state === 'recording') recorder.current.stop();
+    request.current = null;
+    const active = recorder.current;
+    recorder.current = null;
+    if (active && active.state !== 'inactive') active.stop();
     releaseMicrophone();
-  }, []);
+    chunks.current = [];
+    setStage({ kind: 'idle' });
+    setMeaning((current) => (current.kind === 'asking' ? { kind: 'none' } : current));
+  }
+
+  // Leaving the field or the panel, withdrawing consent, removing the
+  // credential or the field becoming ineligible all stop everything at once.
+  useEffect(() => () => invalidate(), [allowed]);
 
   const checks = useMemo(() => (stage.kind !== 'suggestion' ? [] : validateSnapshot({
     origin: snapshot.origin,
@@ -193,38 +207,59 @@ export function SpeechAssist({ field, snapshot, reference, pack, session, onGoTo
   }
 
   async function startRecording() {
-    if (!ready || !('mediaDevices' in navigator)) {
+    // A second press while permission is pending or a recording runs does nothing.
+    if (awaitingPermission.current || recorder.current !== null) return;
+    if (!allowed || !('mediaDevices' in navigator)) {
       fail('microphone_unavailable', null);
       return;
     }
+    const id = generation.current;
+    awaitingPermission.current = true;
     let media: MediaStream;
     try {
       media = await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch (error) {
+      awaitingPermission.current = false;
+      if (id !== generation.current) return;
       const denied = error instanceof DOMException && (error.name === 'NotAllowedError' || error.name === 'SecurityError');
       fail(denied ? 'microphone_denied' : 'microphone_unavailable', null);
       return;
     }
+    awaitingPermission.current = false;
+    // Permission arrived late: the field, panel, consent or credential may have
+    // changed meanwhile. The session number covers all of them, because each
+    // change invalidates. Then the microphone is released, and nothing recorded.
+    if (id !== generation.current) {
+      releaseMicrophone(media);
+      return;
+    }
     stream.current = media;
     chunks.current = [];
-    discard.current = false;
-    const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/webm';
-    const active = new MediaRecorder(media, { mimeType });
-    recorder.current = active;
-    active.ondataavailable = (event) => { if (event.data.size > 0) chunks.current.push(event.data); };
-    active.onstop = () => {
+    let active: MediaRecorder;
+    try {
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/webm';
+      active = new MediaRecorder(media, { mimeType });
+      active.ondataavailable = (event) => { if (event.data.size > 0) chunks.current.push(event.data); };
+      active.onstop = () => {
+        if (id !== generation.current) return;
+        recorder.current = null;
+        releaseMicrophone();
+        clearTimers();
+        const audio = new Blob(chunks.current, { type: 'audio/webm' });
+        chunks.current = [];
+        if (audio.size === 0) {
+          fail('nothing_recorded', null);
+          return;
+        }
+        void sendRecording(audio, id);
+      };
+      active.start();
+    } catch {
       releaseMicrophone();
-      clearTimers();
-      if (discard.current) return;
-      const audio = new Blob(chunks.current, { type: 'audio/webm' });
-      chunks.current = [];
-      if (audio.size === 0) {
-        fail('nothing_recorded', null);
-        return;
-      }
-      void sendRecording(audio);
-    };
-    active.start();
+      fail('microphone_unavailable', null);
+      return;
+    }
+    recorder.current = active;
     setSeconds(0);
     setStage({ kind: 'recording' });
     announce('रिकॉर्डिंग शुरू। रोकने के लिए “रोकें और भेजें” दबाएँ, बिना भेजे हटाने के लिए “रद्द करें”।');
@@ -232,7 +267,7 @@ export function SpeechAssist({ field, snapshot, reference, pack, session, onGoTo
       timers.current.push(setTimeout(() => setSeconds(tick), tick * 1000));
     }
     timers.current.push(setTimeout(() => {
-      if (active.state === 'recording') {
+      if (id === generation.current && active.state === 'recording') {
         announce('15 सेकंड पूरे। रिकॉर्डिंग भेजी जा रही है।');
         active.stop();
       }
@@ -244,24 +279,35 @@ export function SpeechAssist({ field, snapshot, reference, pack, session, onGoTo
   }
 
   function cancel() {
-    discard.current = true;
-    clearTimers();
-    if (recorder.current?.state === 'recording') recorder.current.stop();
-    releaseMicrophone();
-    request.current?.abort();
-    request.current = null;
-    setStage({ kind: 'idle' });
-    announce('रद्द किया गया। कुछ नहीं भेजा गया।');
+    // Before upload nothing has left the browser. Once a request has started,
+    // what was sent is with the service; only its reply is refused here.
+    const sent = stage.kind === 'transcribing' || stage.kind === 'interpreting';
+    invalidate();
+    announce(sent
+      ? 'अनुरोध रद्द किया गया। जो भेजा जा चुका था वह वापस नहीं आता; उसका जवाब अब नहीं लिया जाएगा।'
+      : 'रिकॉर्डिंग हटा दी गई। कुछ नहीं भेजा गया।');
   }
 
-  async function sendRecording(audio: Blob) {
+  function begin(): AbortController {
+    request.current?.abort();
     const controller = new AbortController();
     request.current = controller;
+    return controller;
+  }
+
+  /** A reply counts only for the session and request it was made in. */
+  function stillCurrent(id: number, controller: AbortController): boolean {
+    if (id !== generation.current || request.current !== controller) return false;
+    request.current = null;
+    return true;
+  }
+
+  async function sendRecording(audio: Blob, id: number) {
+    const controller = begin();
     setStage({ kind: 'transcribing' });
     announce('रिकॉर्डिंग भेजी गई; पाठ बन रहा है…');
     const outcome = await transcribe(audio, session.token, controller.signal);
-    if (request.current !== controller) return;
-    request.current = null;
+    if (!stillCurrent(id, controller)) return;
     if (!outcome.ok) {
       if (outcome.failure !== 'cancelled') fail(outcome.failure, null);
       return;
@@ -277,13 +323,12 @@ export function SpeechAssist({ field, snapshot, reference, pack, session, onGoTo
 
   async function interpret(text: string) {
     const trimmed = text.trim();
-    if (trimmed === '') return;
-    const controller = new AbortController();
-    request.current = controller;
+    if (trimmed === '' || !allowed) return;
+    const id = generation.current;
+    const controller = begin();
     setStage({ kind: 'interpreting', text: trimmed });
     const outcome = await interpretValue(trimmed, field, session.token, controller.signal);
-    if (request.current !== controller) return;
-    request.current = null;
+    if (!stillCurrent(id, controller)) return;
     if (!outcome.ok) {
       if (outcome.failure !== 'cancelled') fail(outcome.failure, trimmed);
       return;
@@ -299,13 +344,12 @@ export function SpeechAssist({ field, snapshot, reference, pack, session, onGoTo
   }
 
   async function askMeaning() {
-    if (!ready) return;
-    const controller = new AbortController();
-    request.current = controller;
+    if (!ready || request.current !== null) return;
+    const id = generation.current;
+    const controller = begin();
     setMeaning({ kind: 'asking' });
     const outcome = await interpretField(field, session.token, controller.signal);
-    if (request.current !== controller) return;
-    request.current = null;
+    if (!stillCurrent(id, controller)) return;
     if (!outcome.ok) {
       setMeaning({ kind: 'failed', failure: outcome.failure });
       announce(failureText[outcome.failure]);
@@ -346,7 +390,8 @@ export function SpeechAssist({ field, snapshot, reference, pack, session, onGoTo
             <>
               <p>
                 रिकॉर्डिंग अधिकतम 15 सेकंड की होती है। “रोकें और भेजें” दबाने पर वह सेवा को जाती है;
-                “रद्द करें” दबाने पर कुछ नहीं भेजा जाता।
+                उससे पहले “रद्द करें” दबाने पर कुछ नहीं भेजा जाता। भेजने के बाद रद्द करने पर केवल जवाब
+                छोड़ा जाता है; जो जा चुका वह वापस नहीं आता।
               </p>
               <button type="button" onClick={() => void startRecording()} className={button}>रिकॉर्डिंग शुरू करें</button>
             </>
@@ -482,13 +527,32 @@ export function SpeechAssist({ field, snapshot, reference, pack, session, onGoTo
 export function CloudHelp({ session, announce }: { session: Session; announce: (text: string) => void }) {
   const [topic, setTopic] = useState<HelpTopic>('navigation');
   const [help, setHelp] = useState<{ kind: 'idle' } | { kind: 'loading' } | { kind: 'ready'; url: string; text: string } | { kind: 'failed'; failure: Failure }>({ kind: 'idle' });
+  const request = useRef<AbortController | null>(null);
   const url = help.kind === 'ready' ? help.url : null;
+  const ready = session.consent && session.token !== '';
 
   useEffect(() => () => { if (url !== null) URL.revokeObjectURL(url); }, [url]);
+  // Withdrawing consent, removing the credential or leaving the panel drops a
+  // pending request; its reply, if it still arrives, is not shown.
+  useEffect(() => () => {
+    request.current?.abort();
+    request.current = null;
+    setHelp((current) => (current.kind === 'loading' ? { kind: 'idle' } : current));
+  }, [ready]);
 
   async function fetchHelp() {
+    // The button stays focusable and explains itself; the guard is here, not in aria.
+    if (!ready) {
+      announce('इसके लिए पहले क्लाउड सुविधा चालू करें और क्रेडेंशियल सहेजें।');
+      return;
+    }
+    if (request.current !== null) return;
+    const controller = new AbortController();
+    request.current = controller;
     setHelp({ kind: 'loading' });
-    const outcome = await speechHelp(topic, session.token, new AbortController().signal);
+    const outcome = await speechHelp(topic, session.token, controller.signal);
+    if (request.current !== controller) return;
+    request.current = null;
     if (!outcome.ok) {
       setHelp({ kind: 'failed', failure: outcome.failure });
       announce(failureText[outcome.failure]);
@@ -499,7 +563,6 @@ export function CloudHelp({ session, announce }: { session: Session; announce: (
     announce('सहायता का ऑडियो तैयार है। चलाने के लिए प्लेयर का उपयोग करें।');
   }
 
-  const ready = session.consent && session.token !== '';
   return (
     <section aria-labelledby="help-heading" className="space-y-4">
       <h2 id="help-heading" className="text-xl font-bold">सहायता सुनें</h2>

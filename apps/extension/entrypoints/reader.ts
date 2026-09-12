@@ -1,4 +1,5 @@
 import { defineUnlistedScript } from 'wxt/utils/define-unlisted-script';
+import { snapshotRevision } from '@form-saathi/rules';
 import {
   readerRequestSchema,
   type CoverageGap,
@@ -266,9 +267,14 @@ export default defineUnlistedScript(() => {
 
   let lastDigest = '';
 
-  /** The values as last sent, so a poll only speaks when something changed. */
+  /**
+   * What was last sent, as the panel's own review sees it: labels,
+   * instructions, values, options, constraints, states and gaps, plus the
+   * title. Sequence and timing are left out, so an unchanged page is not
+   * re-announced and does not invalidate an acknowledgment.
+   */
   function digestOf(snapshot: FormSnapshot): string {
-    return JSON.stringify(snapshot.fields.map((field) => [field.key, field.status, field.value, field.required]));
+    return `${snapshot.title}\n${snapshotRevision(snapshot.fields, snapshot.gaps)}`;
   }
 
   function send(reply: ReaderReply): void {
@@ -277,23 +283,29 @@ export default defineUnlistedScript(() => {
     void chrome.runtime.sendMessage(reply).catch(() => undefined);
   }
 
+  /** Re-reads the form and pushes it only if something the review uses differs. */
+  function pushIfChanged(): void {
+    if (boundTabId === null) return;
+    const snapshot = capture(boundTabId);
+    if (digestOf(snapshot) !== lastDigest) send({ type: 'snapshot', snapshot });
+  }
+
   function queueUpdate(): void {
     if (boundTabId === null || pending !== undefined) return;
     pending = setTimeout(() => {
       pending = undefined;
-      if (boundTabId !== null) send({ type: 'snapshot', snapshot: capture(boundTabId) });
+      pushIfChanged();
     }, 250);
   }
 
   function watch(): void {
     if (observer) return;
+    // Any attribute, text or structure change may alter a label, instruction,
+    // option, constraint or visibility, so all of them queue one debounced
+    // re-read that is compared before it is sent.
+    // ponytail: a full capture per 250 ms burst; filter by target if a portal is large.
     observer = new MutationObserver(queueUpdate);
-    observer.observe(document.documentElement, {
-      subtree: true,
-      childList: true,
-      attributes: true,
-      attributeFilter: ['hidden', 'disabled', 'required', 'readonly', 'aria-hidden', 'aria-describedby'],
-    });
+    observer.observe(document.documentElement, { subtree: true, childList: true, attributes: true, characterData: true });
     // `input` as well as `change`: a value being typed is what the panel must show.
     document.addEventListener('input', queueUpdate, true);
     document.addEventListener('change', queueUpdate, true);
@@ -301,9 +313,7 @@ export default defineUnlistedScript(() => {
     // form is also re-read on a timer and pushed only when it differs.
     // ponytail: a full capture every 3 s; diff by element if a portal is large.
     setInterval(() => {
-      if (boundTabId === null || pending !== undefined) return;
-      const snapshot = capture(boundTabId);
-      if (digestOf(snapshot) !== lastDigest) send({ type: 'snapshot', snapshot });
+      if (pending === undefined) pushIfChanged();
     }, 3000);
   }
 

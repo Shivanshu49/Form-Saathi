@@ -15,6 +15,12 @@ declare global {
     __spoken?: string[];
     __voices?: { voiceName: string; lang: string; remote: boolean }[];
     __getUserMedia?: MediaDevices['getUserMedia'];
+    __media?: {
+      /** Permission requests waiting for the test to answer them. */
+      pending: { resolve: () => Promise<void>; reject: (error: Error) => void }[];
+      tracks: { stopped: boolean }[];
+      recorders: { state: string }[];
+    };
   }
 }
 
@@ -596,8 +602,14 @@ test('speech failures leave keyboard navigation and local checks usable', async 
   await recordAndSend(panel);
   await expect(panel.getByText('पाठ बन रहा है…', { exact: true })).toBeVisible();
   await panel.getByRole('button', { name: 'रद्द करें' }).click();
-  await expect(readerStatus(panel)).toHaveText('रद्द किया गया। कुछ नहीं भेजा गया।');
+  // The upload had already started, so cancelling does not claim nothing was sent.
+  await expect(readerStatus(panel)).toHaveText('अनुरोध रद्द किया गया। जो भेजा जा चुका था वह वापस नहीं आता; उसका जवाब अब नहीं लिया जाएगा।');
   await expect(panel.getByRole('button', { name: 'रिकॉर्डिंग शुरू करें' })).toBeVisible();
+  // Before the upload, cancelling discards the recording and says exactly that.
+  await panel.getByRole('button', { name: 'रिकॉर्डिंग शुरू करें' }).click();
+  await expect(panel.getByText(/रिकॉर्डिंग चल रही है/)).toBeVisible();
+  await panel.getByRole('button', { name: 'रद्द करें' }).click();
+  await expect(readerStatus(panel)).toHaveText('रिकॉर्डिंग हटा दी गई। कुछ नहीं भेजा गया।');
 
   // Local checks and navigation are untouched by all of it.
   await panel.getByRole('button', { name: 'पिछला फ़ील्ड', exact: true }).click();
@@ -728,4 +740,254 @@ test('a filled profile is a partial review, never all-clear, and secrets block i
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
     .analyze();
   expect(accessibility.violations).toEqual([]);
+});
+
+/** Puts the panel's microphone and recorder under the test's control. */
+async function controlMicrophone(panel: Page): Promise<void> {
+  await panel.evaluate(() => {
+    const media = { pending: [] as NonNullable<Window['__media']>['pending'], tracks: [] as { stopped: boolean }[], recorders: [] as { state: string }[] };
+    window.__media = media;
+    const real = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+    navigator.mediaDevices.getUserMedia = (constraints) => new Promise<MediaStream>((resolve, reject) => {
+      media.pending.push({
+        resolve: async () => {
+          const stream = await real(constraints);
+          for (const track of stream.getTracks()) {
+            const record = { stopped: false };
+            media.tracks.push(record);
+            const stop = track.stop.bind(track);
+            track.stop = () => { record.stopped = true; stop(); };
+          }
+          resolve(stream);
+        },
+        reject,
+      });
+    });
+    const Real = window.MediaRecorder;
+    window.MediaRecorder = class extends Real {
+      constructor(stream: MediaStream, options?: MediaRecorderOptions) {
+        super(stream, options);
+        media.recorders.push(this);
+      }
+    };
+  });
+}
+
+const media = (panel: Page) => panel.evaluate(() => ({
+  pending: window.__media?.pending.length ?? 0,
+  tracks: window.__media?.tracks.map((track) => track.stopped) ?? [],
+  recorders: window.__media?.recorders.map((recorder) => recorder.state) ?? [],
+}));
+
+/** Answers the oldest waiting microphone permission request. */
+const grantMicrophone = (panel: Page) => panel.evaluate(async () => { await window.__media?.pending.shift()?.resolve(); });
+
+test('a recording session that was left behind sends nothing and releases the microphone', async () => {
+  const page = await openPractice('/eci-form6.html?variant=a&case=issues');
+  const panel = await openPanel(page);
+  const card = panel.getByRole('region', { name: 'मौजूदा फ़ील्ड' });
+  const cloudRequests: string[] = [];
+  panel.on('request', (request) => { if (request.url().includes('/v1/')) cloudRequests.push(new URL(request.url()).pathname); });
+  await enableCloud(panel);
+  await controlMicrophone(panel);
+  const start = panel.getByRole('button', { name: 'रिकॉर्डिंग शुरू करें' });
+  const consentOff = panel.getByRole('button', { name: 'क्लाउड सुविधा बंद करें' });
+  const consentOn = panel.getByRole('button', { name: 'समझ गया — क्लाउड सुविधा चालू करें' });
+
+  // Permission answered after the person moved to another field: the stream is
+  // stopped at once, no recorder is created and nothing is sent.
+  await panel.getByRole('button', { name: 'जन्म तारीख (अभ्यास में आवश्यक)' }).click();
+  await start.click();
+  await expect.poll(async () => (await media(panel)).pending).toBe(1);
+  await panel.getByRole('button', { name: 'अगला फ़ील्ड', exact: true }).click();
+  await expect(card).toContainText('आयु के दस्तावेज़ का अभ्यास विकल्प (आवश्यक)');
+  await grantMicrophone(panel);
+  await expect.poll(async () => (await media(panel)).tracks).toEqual([true]);
+  expect((await media(panel)).recorders).toEqual([]);
+  await expect(panel.getByText(/रिकॉर्डिंग चल रही है/)).toHaveCount(0);
+
+  // Repeated presses make one permission request; consent withdrawn while it
+  // is pending discards the answer.
+  await panel.getByRole('button', { name: 'मकान और सड़क (आवश्यक)' }).click();
+  await start.click();
+  await start.click();
+  await start.click();
+  await expect.poll(async () => (await media(panel)).pending).toBe(1);
+  await consentOff.click();
+  await expect(panel.getByText('बोलकर बताने के लिए पहले नीचे “क्लाउड सुविधा” चालू करें। कीबोर्ड से पढ़ना और जाँच वैसे ही चलते रहते हैं।')).toBeVisible();
+  await grantMicrophone(panel);
+  await expect.poll(async () => (await media(panel)).tracks).toEqual([true, true]);
+  expect((await media(panel)).recorders).toEqual([]);
+  await consentOn.click();
+  await expect(start).toBeVisible();
+
+  // Consent withdrawn during a recording stops it, releases the microphone and
+  // never uploads what was captured — also not when the time limit would have.
+  await start.click();
+  await grantMicrophone(panel);
+  await expect(panel.getByText(/रिकॉर्डिंग चल रही है/)).toBeVisible();
+  expect((await media(panel)).recorders).toEqual(['recording']);
+  await consentOff.click();
+  await expect(panel.getByText(/रिकॉर्डिंग चल रही है/)).toHaveCount(0);
+  await expect.poll(async () => (await media(panel)).tracks).toEqual([true, true, true]);
+  await expect.poll(async () => (await media(panel)).recorders).toEqual(['inactive']);
+  await consentOn.click();
+  await expect(start).toBeVisible();
+  await panel.waitForTimeout(1_000);
+  expect(cloudRequests).toEqual([]);
+
+  // A reply that arrives after cancellation, or after a new session began, is dropped.
+  let held: Parameters<Parameters<Page['route']>[1]>[0] | null = null;
+  await panel.route('**/v1/speech/transcribe', (route) => { held = route; });
+  const release = async () => {
+    await held?.fulfill({ json: { transcript: 'देर से आया पाठ', languageCode: 'hi-IN', requiresConfirmation: true } }).catch(() => undefined);
+    held = null;
+  };
+  await start.click();
+  await grantMicrophone(panel);
+  await expect(panel.getByText(/रिकॉर्डिंग चल रही है/)).toBeVisible();
+  await panel.waitForTimeout(500);
+  await panel.getByRole('button', { name: 'रोकें और भेजें' }).click();
+  await expect(panel.getByText('पाठ बन रहा है…', { exact: true })).toBeVisible();
+  await expect.poll(() => cloudRequests).toEqual(['/v1/speech/transcribe']);
+  await panel.getByRole('button', { name: 'रद्द करें' }).click();
+  await expect(start).toBeVisible();
+  await release();
+  await panel.waitForTimeout(500);
+  await expect(panel.getByLabel('सुना गया पाठ — ज़रूरत हो तो सुधारें')).toHaveCount(0);
+  await expect(start).toBeVisible();
+
+  await start.click();
+  await grantMicrophone(panel);
+  await expect(panel.getByText(/रिकॉर्डिंग चल रही है/)).toBeVisible();
+  await panel.waitForTimeout(500);
+  await panel.getByRole('button', { name: 'रोकें और भेजें' }).click();
+  await expect(panel.getByText('पाठ बन रहा है…', { exact: true })).toBeVisible();
+  await panel.getByRole('button', { name: 'अगला फ़ील्ड', exact: true }).click();
+  await expect(card).toContainText('जिला (आवश्यक)');
+  await release();
+  await panel.waitForTimeout(500);
+  await expect(panel.getByLabel('सुना गया पाठ — ज़रूरत हो तो सुधारें')).toHaveCount(0);
+  await expect(panel.getByText('पाठ बन रहा है…', { exact: true })).toHaveCount(0);
+  await expect(start).toBeVisible();
+  expect(cloudRequests).toEqual(['/v1/speech/transcribe', '/v1/speech/transcribe']);
+  expect((await media(panel)).tracks.every(Boolean)).toBe(true);
+});
+
+test('help audio needs consent and a credential in code, one request at a time', async () => {
+  const page = await openPractice('/nsp.html?variant=a&case=issues');
+  const panel = await openPanel(page);
+  const helpRequests: string[] = [];
+  panel.on('request', (request) => { if (request.url().includes('/v1/speech/help')) helpRequests.push(request.method()); });
+  const fetchHelp = panel.getByRole('button', { name: 'सहायता का ऑडियो लाएँ' });
+  const consentOff = panel.getByRole('button', { name: 'क्लाउड सुविधा बंद करें' });
+  const consentOn = panel.getByRole('button', { name: 'समझ गया — क्लाउड सुविधा चालू करें' });
+  await enableCloud(panel);
+
+  // A saved credential with consent switched off: the button stays reachable and explains itself.
+  await consentOff.click();
+  await expect(panel.getByText('क्रेडेंशियल सहेजा हुआ है।')).toBeVisible();
+  await fetchHelp.focus();
+  await panel.keyboard.press('Enter');
+  await expect(readerStatus(panel)).toHaveText('इसके लिए पहले क्लाउड सुविधा चालू करें और क्रेडेंशियल सहेजें।');
+  await expect(fetchHelp).toBeFocused();
+  expect(helpRequests).toEqual([]);
+
+  // Consent without a credential.
+  await consentOn.click();
+  await panel.getByRole('button', { name: 'क्रेडेंशियल हटाएँ' }).click();
+  await expect(panel.getByText('अभी कोई क्रेडेंशियल नहीं है।')).toBeVisible();
+  // aria-disabled keeps the button focusable; the keyboard still reaches it.
+  await fetchHelp.focus();
+  await panel.keyboard.press('Enter');
+  await expect(readerStatus(panel)).toHaveText('इसके लिए पहले क्लाउड सुविधा चालू करें और क्रेडेंशियल सहेजें।');
+  expect(helpRequests).toEqual([]);
+  await enableCloud(panel);
+
+  // Repeated activation makes one request; a reply after withdrawal is not shown.
+  let held: Parameters<Parameters<Page['route']>[1]>[0] | null = null;
+  await panel.route('**/v1/speech/help', (route) => { held = route; });
+  const release = async () => {
+    await held?.fulfill({ json: {
+      topic: 'navigation', text: 'देर से आया सहायता पाठ', contentType: 'audio/wav', audio: TINY_WAV,
+    } }).catch(() => undefined);
+    held = null;
+  };
+  await fetchHelp.click();
+  await panel.keyboard.press('Enter');
+  await panel.keyboard.press('Enter');
+  await expect(panel.getByText('ऑडियो लाया जा रहा है…')).toBeVisible();
+  await expect.poll(() => helpRequests).toEqual(['POST']);
+  await consentOff.click();
+  await expect(panel.getByText('ऑडियो लाया जा रहा है…')).toHaveCount(0);
+  await release();
+  await consentOn.click();
+  await panel.waitForTimeout(300);
+  await expect(panel.locator('audio[controls]')).toHaveCount(0);
+  await expect(panel.getByText('देर से आया सहायता पाठ')).toHaveCount(0);
+
+  // The panel losing its page unmounts the section; its late reply is dropped too.
+  await fetchHelp.click();
+  await expect.poll(() => helpRequests).toEqual(['POST', 'POST']);
+  await page.reload();
+  await expect(readerStatus(panel)).toHaveText('पेज फिर से लोड हुआ। पिछली पढ़ी गई जानकारी हटा दी गई है। फ़ॉर्म फिर पढ़ें।');
+  await release();
+  await panel.getByRole('button', { name: 'फ़ॉर्म फिर पढ़ें' }).click();
+  await expect(fetchHelp).toBeVisible();
+  await expect(panel.locator('audio[controls]')).toHaveCount(0);
+  await expect(panel.getByText('देर से आया सहायता पाठ')).toHaveCount(0);
+  expect(helpRequests).toEqual(['POST', 'POST']);
+});
+
+test('an acknowledgment covers instructions, constraints and option labels, not just values', async () => {
+  const page = await openPractice('/eci-form6.html?variant=a&case=issues');
+  const panel = await openPanel(page);
+  const status = panel.getByRole('region', { name: 'स्थिति', exact: true });
+  const acknowledge = panel.getByRole('button', { name: 'मैंने दिखाई गई समीक्षा पढ़ ली है' });
+  const recorded = async () => {
+    await expect(status).toContainText(/पढ़ने की स्वीकृति: दर्ज — संशोधन [0-9a-f]{8}/);
+    // Acknowledging re-reads the form; let that push settle before the next change.
+    await panel.waitForTimeout(500);
+  };
+  const stale = () => expect(status).toContainText('स्वीकृति अमान्य');
+
+  await acknowledge.click();
+  await recorded();
+
+  // Unchanged page: polling and unrelated mutations keep the acknowledgment.
+  await page.evaluate(() => { document.body.classList.add('touched'); document.body.setAttribute('data-touched', 'yes'); });
+  await panel.waitForTimeout(3_500);
+  await recorded();
+
+  // Instructions changed.
+  await page.evaluate(() => { document.querySelector('#pin-help')!.textContent = 'अब PIN पाँच अंकों का माना गया है।'; });
+  await stale();
+  await acknowledge.click();
+  await recorded();
+
+  // A native constraint changed.
+  await page.evaluate(() => { document.querySelector('#eci-pin')!.setAttribute('pattern', '[0-9]{5}'); });
+  await stale();
+  await panel.getByRole('button', { name: 'डाक PIN (आवश्यक)' }).click();
+  await expect(panel.getByRole('region', { name: 'मौजूदा फ़ील्ड' })).toContainText('पेज का प्रारूप नियम: [0-9]{5}');
+  await acknowledge.click();
+  await recorded();
+
+  // The selected radio keeps its value while its visible label changes.
+  await page.evaluate(() => {
+    const label = document.querySelector('#eci-age-proof-other-choice')!.parentElement!;
+    label.lastChild!.textContent = 'सूची के दस्तावेज़ उपलब्ध नहीं — कोई और दस्तावेज़';
+  });
+  await stale();
+  await expect(panel.getByRole('table').getByRole('row', { name: /^आयु के दस्तावेज़ का अभ्यास विकल्प/ })).toContainText('कोई और दस्तावेज़');
+  expect(await page.locator('#eci-age-proof-other-choice').isChecked()).toBe(true);
+  await acknowledge.click();
+  await recorded();
+
+  // Acknowledging still re-reads the form first.
+  await page.evaluate(() => { document.querySelector('#eci-district')!.setAttribute('aria-label', 'ज़िला (बदला हुआ)'); });
+  await expect(status).toContainText('स्वीकृति अमान्य');
+  await acknowledge.click();
+  await recorded();
+  await expect(panel.getByRole('button', { name: 'ज़िला (बदला हुआ)' })).toBeVisible();
 });

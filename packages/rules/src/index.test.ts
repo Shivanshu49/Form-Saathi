@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { maskIdentifier, nspPack, recognizePage, speechEligibility } from './index.js';
+import { eciPack, maskIdentifier, nspPack, recognizePage, selectRulePack, speechEligibility } from './index.js';
 
 describe('page recognition', () => {
   it('recognizes the two portal hosts and their subdomains', () => {
@@ -14,6 +14,37 @@ describe('page recognition', () => {
     for (const origin of ['https://example.com', 'https://scholarships.gov.in.example.com', 'null', '']) {
       expect(recognizePage(origin)).toEqual({ kind: 'unknown' });
     }
+  });
+});
+
+describe('rule pack selection', () => {
+  const nspKeys = nspPack.fields.map((rule) => rule.key);
+  const eciKeys = eciPack.fields.map((rule) => rule.key);
+
+  it('selects a pack only for a page carrying its workflow signature', () => {
+    expect(selectRulePack('http://127.0.0.1:4173', nspKeys)).toMatchObject({ pack: nspPack, via: 'practice', missing: [] });
+    expect(selectRulePack('https://voters.eci.gov.in', eciKeys)).toMatchObject({ pack: eciPack, via: 'host', missing: [] });
+    // The signature alone selects; optional fields such as the practice note may be absent.
+    expect(selectRulePack('http://127.0.0.1:4173', ['eci-name-hi', 'eci-age-proof'])).toMatchObject({ pack: eciPack, via: 'practice' });
+  });
+
+  it('never lets a hostname alone establish a workflow', () => {
+    expect(selectRulePack('https://voters.eci.gov.in', [])).toEqual({ pack: null, reason: 'no-fields' });
+    expect(selectRulePack('https://voters.eci.gov.in', ['search', 'epic'])).toEqual({ pack: null, reason: 'no-workflow' });
+    expect(selectRulePack('https://scholarships.gov.in', ['nsp-otr'])).toEqual({ pack: null, reason: 'no-workflow' });
+    // Another workflow's fields on this portal do not select that workflow's pack.
+    expect(selectRulePack('https://scholarships.gov.in', eciKeys)).toEqual({ pack: null, reason: 'no-workflow' });
+    expect(selectRulePack('https://example.com', nspKeys)).toEqual({ pack: null, reason: 'unknown-page' });
+    expect(selectRulePack('http://127.0.0.1:4173', ['postal-pin'])).toEqual({ pack: null, reason: 'unknown-page' });
+  });
+
+  it('lists the non-optional fields a matched page does not offer', () => {
+    const selection = selectRulePack('http://127.0.0.1:4173', ['nsp-otr', 'nsp-locality', 'nsp-note']);
+    expect(selection.pack).toBe(nspPack);
+    if (selection.pack === null) return;
+    expect(selection.missing.map((rule) => rule.key)).toEqual(
+      nspKeys.filter((key) => !['nsp-otr', 'nsp-locality', 'nsp-note', 'nsp-detail'].includes(key)),
+    );
   });
 });
 

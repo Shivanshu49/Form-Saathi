@@ -159,7 +159,21 @@ run**; `studies/results/` is empty and `npm run report` prints so.
 
 V1 never autofills, submits, intercepts Submit, or bypasses CAPTCHA. Form
 snapshots and document references stay local and temporary: reading, navigation
-and validation all run in the browser and need no server. Sarvam operations need
-explicit consent and a server-side key; the extension holds no provider key and
-no shared permanent credential, and no live provider call has been made yet.
-There is no database or companion website in this stage.
+and validation all run in the browser and need no server, and the snapshot and
+the reference spelling are never part of any request.
+
+Separately, with the cloud feature switched on, three kinds of request leave
+the browser, each only on the person's own action: a recording they stop and
+send, for transcription; the transcript they approve, together with the
+selected field's label, instructions, section and option labels (never its
+value), for interpretation; and a help topic name, for generic help audio.
+Raw audio cannot be redacted, and page labels or instructions are sent as the
+page wrote them, so none of this is guaranteed to be free of personal
+information — which is why identifier and secret fields never offer recording.
+Cancelling before the upload discards the recording; cancelling afterwards only
+refuses the reply, and switching the feature off stops any recording and
+request in progress. Sarvam operations need explicit consent and a server-side
+key; the extension holds no provider key and no shared permanent credential,
+and no live provider call has been made yet. There is no database. The
+companion website is static guidance and filed results; it receives no form
+data.

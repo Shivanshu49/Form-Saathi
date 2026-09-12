@@ -125,6 +125,7 @@ mappings remain unverified there.
 | `devanagari-digits` | unchecked | Digits are normalized for checking; portal acceptance is unknown |
 | `pin-district-unchecked`, `otr-issuance-unchecked`, `ifsc-branch-unchecked` | unchecked | No reviewed directory, issuance record or bank confirmation |
 | `unmapped-fields`, `coverage-gap`, `no-rule-pack`, `live-testing-unverified` | unchecked | Stated limits of this stage |
+| `no-readable-fields`, `expected-fields-missing` | unchecked | A page with nothing applicable read, or a recognised workflow missing some of its non-optional fields, is never a complete review. A hostname alone never selects a pack: the workflow's signature fields must be present. |
 
 Aadhaar, EID and OTR stay distinct concepts: only a field a pack maps as an OTR
 gets the 14-digit rule, an Aadhaar-mapped field is never required (Form 6 allows

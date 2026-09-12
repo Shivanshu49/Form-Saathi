@@ -3,24 +3,62 @@ import type { ValidationResult } from './validate.js';
 // The final review: which data an acknowledgment refers to, and what the
 // results add up to. Nothing here claims acceptance, identity or submission.
 
+/** The part of a read field an acknowledgment refers to; structurally a FormField. */
+export type ReviewedField = {
+  key: string;
+  label: string;
+  /** Instructions the page attaches to the field. */
+  description: string;
+  group: string;
+  kind: string;
+  status: string;
+  required: boolean;
+  readOnly: boolean;
+  value: string | null;
+  options: readonly { value: string; label: string; selected: boolean }[];
+  constraints: {
+    control: string;
+    pattern: string | null;
+    inputMode: string | null;
+    maxLength: number | null;
+    min: string | null;
+    max: string | null;
+  };
+};
+
 /** Everything that, if it changes, makes an earlier acknowledgment stale. */
 export type ReviewMaterial = {
   documentId: string;
-  fields: readonly {
-    key: string;
-    label: string;
-    group: string;
-    kind: string;
-    status: string;
-    required: boolean;
-    readOnly: boolean;
-    value: string | null;
-    options: readonly { value: string; selected: boolean }[];
-  }[];
+  fields: readonly ReviewedField[];
   gaps: readonly { reason: string; label: string }[];
   pack: { id: string; version: string; reviewed: string } | null;
   reference: string;
 };
+
+/**
+ * What the reader saw, as text: identity, labels, instructions, grouping,
+ * values, every option's label and value, native constraints, states and
+ * coverage gaps. Sequence numbers and timestamps are deliberately absent, so an
+ * unchanged poll compares equal. Shared by the reader (to push only real
+ * changes) and the panel (to invalidate an acknowledgment).
+ */
+export function snapshotRevision(
+  fields: readonly ReviewedField[],
+  gaps: readonly { reason: string; label: string }[],
+): string {
+  return JSON.stringify([
+    fields.map((field) => [
+      field.key, field.label, field.description, field.group, field.kind, field.status,
+      field.required, field.readOnly, field.value,
+      field.options.map((option) => [option.value, option.label, option.selected]),
+      [
+        field.constraints.control, field.constraints.pattern, field.constraints.inputMode,
+        field.constraints.maxLength, field.constraints.min, field.constraints.max,
+      ],
+    ]),
+    gaps.map((gap) => [gap.reason, gap.label]),
+  ]);
+}
 
 /**
  * A deterministic description of exactly what was reviewed. Compared as a
@@ -31,11 +69,7 @@ export function reviewRevision(material: ReviewMaterial): string {
     material.documentId,
     material.pack ? [material.pack.id, material.pack.version, material.pack.reviewed] : null,
     material.reference,
-    material.fields.map((field) => [
-      field.key, field.label, field.group, field.kind, field.status, field.required, field.readOnly, field.value,
-      field.options.filter((option) => option.selected).map((option) => option.value),
-    ]),
-    material.gaps.map((gap) => [gap.reason, gap.label]),
+    snapshotRevision(material.fields, material.gaps),
   ]);
 }
 

@@ -1,4 +1,4 @@
-import { selectRulePack, type FieldRule, type RulePack } from './packs.js';
+import { selectRulePack, type FieldRule, type PackSelection, type RulePack } from './packs.js';
 
 // Deterministic local checks. Nothing here contacts a service, guesses a field's
 // meaning from its value, or decides eligibility, identity or acceptance.
@@ -394,18 +394,49 @@ export function validateWithPack(
   return results;
 }
 
+const noPackText: Record<Exclude<PackSelection, { pack: RulePack }>['reason'], string> = {
+  'no-fields': 'इस पेज पर कोई पढ़ने योग्य फ़ील्ड नहीं मिला, इसलिए कोई जाँच नहीं हुई। यह किसी फ़ॉर्म की समीक्षा नहीं है।',
+  'no-workflow': 'पोर्टल पहचाना गया, पर यह पेज किसी समीक्षित कार्यप्रवाह से मेल नहीं खाता: उसके पहचान-फ़ील्ड यहाँ नहीं मिले। किसी फ़ील्ड की जाँच नहीं हुई।',
+  'unknown-page': 'इस पेज के लिए कोई समीक्षित नियम पैक नहीं है, इसलिए किसी फ़ील्ड की जाँच नहीं हुई।',
+};
+
 export function validateSnapshot(input: ValidationInput): ValidationResult[] {
   const selection = selectRulePack(input.origin, input.fields.map((field) => field.key));
-  const results: ValidationResult[] = selection === null
-    ? [{
+  const results: ValidationResult[] = [];
+  if (!input.fields.some((field) => field.status === 'read')) {
+    // Nothing applicable was read, so no review of a form has taken place.
+    results.push({
+      ruleId: 'no-readable-fields',
+      fieldId: null,
+      severity: 'unchecked',
+      message: 'इस पेज पर कोई लागू फ़ील्ड पढ़ा नहीं गया, इसलिए यह किसी फ़ॉर्म की समीक्षा नहीं है।',
+      action: 'सही फ़ॉर्म पेज खोलकर उसे फिर पढ़ें।',
+      source: null,
+    });
+  }
+  if (selection.pack === null) {
+    results.push({
       ruleId: 'no-rule-pack',
       fieldId: null,
       severity: 'unchecked',
-      message: 'इस पेज के लिए कोई समीक्षित नियम पैक नहीं है, इसलिए किसी फ़ील्ड की जाँच नहीं हुई।',
+      message: noPackText[selection.reason],
       action: 'फ़ील्ड सूची पढ़कर जानकारी स्वयं जाँचें।',
       source: null,
-    }]
-    : validateWithPack(selection.pack, selection.via, input);
+    });
+  } else {
+    results.push(...validateWithPack(selection.pack, selection.via, input));
+    if (selection.missing.length > 0) {
+      // The workflow was recognised, but part of it is not on this page.
+      results.push({
+        ruleId: 'expected-fields-missing',
+        fieldId: null,
+        severity: 'unchecked',
+        message: `इस कार्यप्रवाह के ${selection.missing.length} अपेक्षित फ़ील्ड इस पेज पर नहीं मिले, इसलिए उनकी जाँच नहीं हुई: ${selection.missing.map((rule) => rule.key).join(', ')}।`,
+        action: 'पोर्टल पर वे हिस्से स्वयं देखें; यह समीक्षा उन्हें नहीं ढकती।',
+        source: selection.pack.id,
+      });
+    }
+  }
 
   for (const gap of input.gaps) {
     results.push({

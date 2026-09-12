@@ -86,7 +86,7 @@ function FieldValue({ field, revealed }: { field: FormField; revealed: boolean }
 }
 
 function packFor(snapshot: FormSnapshot): RulePack | null {
-  return selectRulePack(snapshot.origin, snapshot.fields.map((field) => field.key))?.pack ?? null;
+  return selectRulePack(snapshot.origin, snapshot.fields.map((field) => field.key)).pack;
 }
 
 /** Exactly what an acknowledgment refers to: data, structure, rules and reference. */
@@ -374,7 +374,8 @@ export default function App() {
 
       {current === null || snapshot === null ? null : (
         <SpeechAssist
-          key={current.fieldId}
+          // A new document restarts field ids, so both name the field being spoken about.
+          key={`${snapshot.documentId}:${current.fieldId}`}
           field={current}
           snapshot={snapshot}
           reference={reference}
@@ -467,7 +468,7 @@ export default function App() {
 
       <section aria-labelledby="support-heading" className="space-y-4">
         <h2 id="support-heading" className="text-xl font-bold">सहायता की स्थिति</h2>
-        <p>फ़ील्ड पढ़ना, नेविगेशन, स्थानीय जाँच और बोलकर सुझाव उपलब्ध हैं। समीक्षा पूरी करना अभी उपलब्ध नहीं है।</p>
+        <p>फ़ील्ड पढ़ना, नेविगेशन, स्थानीय जाँच, बोलकर सुझाव और समीक्षा की स्वीकृति उपलब्ध हैं। आवेदन भेजना, CAPTCHA और पोर्टल की स्वीकृति हमेशा आपके हाथ में रहते हैं।</p>
         <dl className="space-y-4 border-l-4 border-amber-700 pl-4">
           <div>
             <dt className="font-bold" lang="en">National Scholarship Portal</dt>

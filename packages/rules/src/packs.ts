@@ -53,15 +53,19 @@ export type RulePack = {
   workflow: Workflow;
   /** Live hosts this pack describes. Matching one does not verify anything. */
   hosts: readonly string[];
-  /** Control keys that identify the practice representation of this workflow. */
+  /**
+   * Control keys that identify this workflow's practice representation. A page
+   * without all of them, on any host, is not this workflow.
+   */
   signature: readonly string[];
   fields: readonly FieldRule[];
 };
 
 /**
  * Field keys are the practice inventory's ids (docs/support-matrix.md). The
- * live portals' own control names are still unknown, so a host match selects
- * this pack but its mappings remain unverified there.
+ * live portals' own control names are still unknown, so on a live host this
+ * pack is selected only if the page happens to carry these keys, and its
+ * mappings remain unverified there.
  */
 export const nspPack: RulePack = {
   id: 'nsp-2026-27-basic-general',
@@ -154,21 +158,31 @@ export function recognizePage(origin: string): PageRecognition {
   return { kind: 'unknown' };
 }
 
-export type PackSelection = { pack: RulePack; via: 'host' | 'practice' } | null;
+export type PackSelection =
+  | { pack: RulePack; via: 'host' | 'practice'; missing: readonly FieldRule[] }
+  /** Recognised as a portal or practice page, but not as any reviewed workflow. */
+  | { pack: null; reason: 'no-fields' | 'no-workflow' | 'unknown-page' };
 
 /**
- * A portal host selects its pack. A local page selects one only when it carries
- * that workflow's practice field keys, so no other page is validated by guess.
+ * A pack applies only to a page that carries its workflow's signature fields.
+ * The host says which portal a page belongs to, never which form it is: an
+ * unrelated or empty portal page selects nothing. A local page is matched the
+ * same way, by its practice field keys. `missing` lists the pack's non-optional
+ * fields the page did not offer, so coverage is reported instead of assumed.
  */
 export function selectRulePack(origin: string, keys: readonly string[]): PackSelection {
   const page = recognizePage(origin);
-  if (page.kind === 'portal') {
-    const pack = rulePacks.find((candidate) => candidate.workflow === page.workflow);
-    return pack ? { pack, via: 'host' } : null;
-  }
-  if (page.kind === 'local') {
-    const pack = rulePacks.find((candidate) => candidate.signature.every((key) => keys.includes(key)));
-    return pack ? { pack, via: 'practice' } : null;
-  }
-  return null;
+  if (page.kind === 'unknown') return { pack: null, reason: 'unknown-page' };
+  if (keys.length === 0) return { pack: null, reason: 'no-fields' };
+  const candidates = page.kind === 'portal'
+    ? rulePacks.filter((candidate) => candidate.workflow === page.workflow)
+    : rulePacks;
+  const pack = candidates.find((candidate) => candidate.signature.every((key) => keys.includes(key)));
+  // A local page without a practice signature is simply a page no pack describes.
+  if (!pack) return { pack: null, reason: page.kind === 'portal' ? 'no-workflow' : 'unknown-page' };
+  return {
+    pack,
+    via: page.kind === 'portal' ? 'host' : 'practice',
+    missing: pack.fields.filter((rule) => rule.requirement !== 'optional' && !keys.includes(rule.key)),
+  };
 }

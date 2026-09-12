@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { eciPack, nspPack, type RulePack } from './packs.js';
+import { summarizeReview } from './review.js';
 import {
   calendarProblem,
   normalizeDigits,
@@ -321,6 +322,50 @@ describe('what is never checked', () => {
       reference: { englishName: 'KAVYA SAIN' },
     });
     expect(results.map((result) => result.ruleId)).toEqual(['no-rule-pack']);
+  });
+
+  it('never reviews an empty or unrelated portal page as a workflow', () => {
+    const empty = validateSnapshot({ origin: 'https://voters.eci.gov.in', fields: [], gaps: [], reference: { englishName: '' } });
+    expect(empty.map((result) => result.ruleId).sort()).toEqual(['no-readable-fields', 'no-rule-pack']);
+    expect(empty.find((result) => result.ruleId === 'no-rule-pack')?.message).toContain('कोई पढ़ने योग्य फ़ील्ड नहीं');
+    expect(summarizeReview(empty, [], []).outcome).toBe('partial-coverage');
+
+    for (const origin of ['https://voters.eci.gov.in', 'https://scholarships.gov.in']) {
+      const unrelated = validateSnapshot({
+        origin,
+        fields: [field('search', 'लखनऊ'), field('epic-number', '', { required: true })],
+        gaps: [],
+        reference: { englishName: '' },
+      });
+      // The host says which portal; only the workflow's own fields say which form.
+      expect(unrelated.map((result) => result.ruleId)).toEqual(['no-rule-pack']);
+      expect(unrelated[0]?.message).toContain('किसी समीक्षित कार्यप्रवाह से मेल नहीं खाता');
+      expect(summarizeReview(unrelated, [], []).outcome).not.toBe('clear');
+    }
+
+    // Every field hidden: nothing applicable was reviewed either.
+    const hidden = run(nspComplete().map((current) => ({ ...current, status: 'inactive' as const, value: null })), 'KAVYA SAIN');
+    expect(hidden.some((result) => result.ruleId === 'no-readable-fields')).toBe(true);
+    expect(summarizeReview(hidden, [], []).outcome).not.toBe('clear');
+  });
+
+  it('applies a pack on its live host only with the workflow signature, and reports missing fields', () => {
+    const complete = validateSnapshot({ origin: 'https://scholarships.gov.in', fields: nspComplete(), gaps: [], reference: { englishName: 'KAVYA SAIN' } });
+    expect(complete.find((result) => result.ruleId === 'live-testing-unverified')?.message).toContain('सत्यापित नहीं');
+    expect(complete.some((result) => result.ruleId === 'expected-fields-missing')).toBe(false);
+    expect(bySeverity(complete, 'error')).toEqual([]);
+
+    const partial = validateSnapshot({
+      origin: 'https://scholarships.gov.in',
+      fields: nspComplete().filter((current) => !['nsp-pin', 'nsp-dob', 'nsp-note'].includes(current.key)),
+      gaps: [],
+      reference: { englishName: 'KAVYA SAIN' },
+    });
+    const missing = partial.find((result) => result.ruleId === 'expected-fields-missing');
+    expect(missing?.severity).toBe('unchecked');
+    expect(missing?.message).toContain('2 अपेक्षित फ़ील्ड');
+    expect(missing?.message).toContain('nsp-dob, nsp-pin');
+    expect(summarizeReview(partial, [], []).outcome).toBe('partial-coverage');
   });
 
   it('marks both shipped packs as untested against their live portals', () => {

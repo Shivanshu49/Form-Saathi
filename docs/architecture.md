@@ -153,15 +153,21 @@ offer recording. The pilot credential and the consent live in
 
 The final review is built from the current snapshot and the current results,
 never from anything stored. `reviewRevision()` in `packages/rules` serialises
-exactly what was reviewed — the document, every field's key, label, section,
-kind, state, requirement, read-only flag, value and selected options, the
-coverage gaps, the pack id, version and review date, and the reference
-spelling — and the acknowledgment records that full text. Pressing “मैंने
+exactly what was reviewed — the document, every field's key, label,
+instructions, section, kind, state, requirement, read-only flag, value, every
+option's value, label and selection, its native constraints, the coverage
+gaps, the pack id, version and review date, and the reference spelling — and
+the acknowledgment records that full text. Sequence numbers and timing are
+left out, so an unchanged poll changes nothing. The reader uses the same
+serialisation (`snapshotRevision()`) to decide whether a mutation or poll is
+worth pushing, so every change that would invalidate an acknowledgment reaches
+the panel and nothing else is re-announced. Pressing “मैंने
 दिखाई गई समीक्षा पढ़ ली है” first reads the form again through the reader and
 only records the acknowledgment when the fresh revision equals the displayed
 one; otherwise it says the form changed. Any later change to that material —
-a value edited, a value set by a script, a field appearing, a rule pack or the
-reference changing — makes the acknowledgment stale, which is said once in the
+a value edited, a value set by a script, a field appearing, an instruction,
+option label or format rule changing, a rule pack or the reference changing —
+makes the acknowledgment stale, which is said once in the
 status region and shown in the review until the person acknowledges again. The
 reader also re-reads the page every three seconds and pushes a snapshot only
 when the values differ, so a script setting `value` with no event is still
