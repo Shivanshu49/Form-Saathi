@@ -3,10 +3,19 @@
 Accessible government-form navigation and review in Hindi, built for desktop
 Chrome alongside screen readers, particularly NVDA.
 
-**Foundation only:** the extension opens a Hindi side panel and can check the
-local NestJS API. Form navigation, review, speech, and AI are later stages.
-NSP and ECI Form 6 live support is **unverified**; the exact NSP workflow still
-needs to be identified.
+The extension opens a Hindi side panel for the tab you activate it on, reads
+that page's form fields, checks them against local reviewed rule packs, and lets
+you move through them and jump to any field in the page — with the keyboard
+alone. Long identifiers stay masked until you ask, and an optional read-aloud
+control never starts on its own. Fictional NSP and ECI Form 6 practice pages are
+included. With the optional service configured, a person can speak a value for
+a field, correct the transcript, and get a suggestion the local rules check
+before they apply it themselves. A final review summarises what was found,
+walks through open issues, and records that the person read it — tied to the
+exact data reviewed, and invalidated by any later change. No rule pack has
+been tested against a live portal and no live provider call has been made.
+The selected NSP scope is AY 2026–27, Basic Information → General Information.
+Both portals' live support remains **unverified**.
 
 ## Setup
 
@@ -34,13 +43,30 @@ This starts the shared-package watcher, Nest API on port 3000, and WXT
 development server on port 5173.
 It leaves browser startup to you:
 
-1. Open `chrome://extensions` in desktop Chrome and enable Developer mode.
+1. Open `chrome://extensions` in desktop Chrome 116 or later and enable Developer mode.
 2. Choose **Load unpacked** and select `apps/extension/.output/chrome-mv3-dev`.
-3. Pin Form Saathi and activate its toolbar action to open the side panel.
-4. Tab to **सेवा की स्थिति जाँचें** and press Enter. Expect **सेवा उपलब्ध है।**
+3. Pin Form Saathi. In another terminal run `npm run dev:fixtures` and open a
+   practice form, for example `http://127.0.0.1:4173/nsp.html`.
+4. Activate the toolbar action, or press `Alt+Shift+F`, on that tab. The panel
+   opens for that tab and lists its fields, values and coverage limits.
+5. Tab through the panel: **फ़ॉर्म फिर पढ़ें**, then **पिछला फ़ील्ड** and
+   **अगला फ़ील्ड** to move between fields, **मूल फ़ील्ड पर जाएँ** to put focus on
+   the page control, and **पढ़कर सुनाएँ** / **पढ़ना रोकें** for optional speech.
+   Press F6 to come back to the panel from the page.
+6. Change or insert a field in the page; the panel follows without losing your
+   place. Long identifiers show as **मान छिपा है** until you press
+   **पूरा मान दिखाएँ**.
+7. Read **समीक्षा** for what the local rules found, grouped into
+   **सुधार चाहिए**, **पुष्टि चाहिए** and **जाँचा नहीं गया**, each with its
+   source and next action. Type your document's exact English spelling under
+   **आपका संदर्भ** to have the name compared; it is never saved or sent.
+8. Tab to **सेवा की स्थिति जाँचें** and press Enter. Expect **सेवा उपलब्ध है।**
 
-The API listens at `http://127.0.0.1:3000`. This is a service check only; it
-does not read the page or send form data. Stop development with Ctrl+C.
+The API listens at `http://127.0.0.1:3000`; that button is a service check only.
+What the panel reads stays in the browser: no page contents, snapshots or form
+values are sent to the API or stored. Activation grants access to that one tab,
+so nothing is read until you ask, and each tab keeps its own review. Stop
+development with Ctrl+C.
 
 For a production-build smoke check, run `npm run build`, start the API with
 `npm run start --workspace @form-saathi/api`, and load
@@ -50,6 +76,33 @@ For a production-build smoke check, run `npm run build`, start the API with
 curl --fail http://127.0.0.1:3000/health
 # {"status":"ok","service":"form-saathi-api"}
 ```
+
+## Companion website
+
+```bash
+npm run dev:web
+```
+
+Open **http://127.0.0.1:3100/** for the introduction, installation steps,
+keyboard and NVDA guidance, practice-form links, the supported-workflow matrix
+(rendered from the rule packs), privacy and limitations, and a results page that
+shows only sessions actually filed under `studies/results/` — empty until then.
+Run `npm run dev:fixtures` beside it so the practice links resolve.
+
+## Try the practice forms
+
+```bash
+npm run dev:fixtures
+```
+
+Open **http://127.0.0.1:4173/**. Both demonstrations have A/B profiles, flawed
+and filled scenarios, conditional fields and a dynamically inserted note.
+Use fictional values only. Nothing is submitted, and edits disappear on reload.
+These are limited practice representations, not live portal copies.
+
+See the [source register](docs/source-register.md),
+[support matrix and field inventory](docs/support-matrix.md),
+[expected results](fixtures/expected-results.md) and [fixture instructions](fixtures/README.md).
 
 ## Checks
 
@@ -61,25 +114,40 @@ npx playwright install chromium --no-shell
 npm run test:e2e
 ```
 
-Stop the development API before `test:e2e`, which owns port 3000. That command
-builds both apps, starts the API, and uses Playwright's bundled Chromium with
-the actual extension loaded. `npm test` runs Vitest unit and API integration
+Stop servers on ports 3000 and 4173 before `test:e2e`. It builds both apps and
+the practice pages, starts the API and fixture preview, and uses Playwright's
+bundled Chromium for extension and practice tests. `npm run test:fixtures`
+runs only the practice project. `npm test` runs Vitest unit and API integration
 checks; each also has a separate `test:unit` or `test:integration` command.
 
-`typecheck` runs TypeScript `--noEmit` for all workspaces and test/config files.
+`typecheck` runs TypeScript `--noEmit` for all workspaces, fixtures and test/config files.
 A successful WXT bundle alone does not establish type correctness. See
 [test evidence and the manual Chrome/NVDA checklist](docs/testing.md).
+
+## Pilot
+
+`npm run package:pilot` builds and zips the extension; [release steps](docs/release.md)
+cover the service and credentials. The [manual Windows Chrome/NVDA checklist](docs/manual-nvda-checklist.md)
+and the [usability protocol](docs/usability-protocol.md) are written and **not run**;
+`studies/` holds the empty results template and `npm run report` prints a report
+from pseudonymous session counts only — nothing in this repository is a result.
 
 ## Workspace
 
 - `apps/extension`: WXT, React, Tailwind/Vite, typed Chrome APIs.
-- `apps/api`: strict TypeScript, NestJS, Express, ESM.
-- `packages/contracts`: browser-safe Zod schemas and inferred types.
-- `packages/rules`: browser-safe support metadata; validators and rule packs follow later.
-- `fixtures`: fictional practice material only.
-- `docs`: [product specification](docs/product-spec.md), [architecture and sources](docs/architecture.md).
+- `apps/api`: strict TypeScript, NestJS, Express, ESM. Health plus optional
+  transcription, interpretation and help-audio routes behind expiring pilot
+  credentials and a replaceable provider adapter; off unless configured.
+- `packages/contracts`: browser-safe Zod schemas for the API and for panel/reader messages.
+- `packages/rules`: versioned NSP and ECI rule packs and the local validation engine, with every source and unchecked boundary recorded.
+- `apps/web`: Next.js companion site for installation, guidance, practice links, the workflow matrix and filed results only.
+- `fixtures`: two fictional practice forms, matched A/B data and independent expectations.
+- `docs`: [product specification](docs/product-spec.md), [architecture and sources](docs/architecture.md), [release](docs/release.md), [manual checklist](docs/manual-nvda-checklist.md), [usability protocol](docs/usability-protocol.md).
+- `studies`: empty results template, session-log template and the pilot report generator.
 
 V1 never autofills, submits, intercepts Submit, or bypasses CAPTCHA. Form
-snapshots and document references must stay local and temporary. Future Sarvam
-operations need explicit consent and a server-side key. There is no database
-or companion website in this stage.
+snapshots and document references stay local and temporary: reading, navigation
+and validation all run in the browser and need no server. Sarvam operations need
+explicit consent and a server-side key; the extension holds no provider key and
+no shared permanent credential, and no live provider call has been made yet.
+There is no database or companion website in this stage.

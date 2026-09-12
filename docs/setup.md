@@ -57,6 +57,7 @@ After deliberately using `--ignore-scripts`, run `npm run postinstall` yourself.
 | Oxlint | 1.82.0 |
 | concurrently | 10.0.5 |
 | Chrome types / Node types | 0.1.43 / 24.13.4 |
+| Next.js / Tailwind PostCSS plugin | 16.3.5 / 4.3.3 |
 
 The lockfile contains every exact transitive version and integrity hash.
 TypeScript 6.0.3 follows the Nest ESM starter's compiler line rather than
@@ -93,6 +94,58 @@ checkout. Setup uses `npm ci`.
 watch, Nest watch on port 3000, and WXT on port 5173. Load `apps/extension/.output/chrome-mv3-dev` in Chrome
 manually. For separate terminals use `npm run dev:shared`, `npm run dev:api`,
 and `npm run dev:extension` after `npm run build:shared`.
+
+Chrome 116 or later is required. Open a form, then activate Form Saathi with its
+toolbar button or `Alt+Shift+F`; change that shortcut at
+`chrome://extensions/shortcuts`. Activation is what grants access to that one
+tab, so the panel can read a page only while the user asks for it, and a panel
+opened on one tab never reads another. After reloading the page, or if the
+extension is rebuilt and reloaded, activate again or press **फ़ॉर्म फिर पढ़ें**.
+The reader is injected on demand from `reader.js`; it is bundled but never
+listed in the manifest, so no page runs extension code until activation.
+
+`npm run dev:web` serves the companion website at `http://127.0.0.1:3100`;
+`npm run build:web` builds it and `npm run start --workspace @form-saathi/web`
+serves the build. The site links to the practice pages at
+`NEXT_PUBLIC_PRACTICE_ORIGIN` (default `http://127.0.0.1:4173`), so run the
+fixtures beside it. Next.js was added at this stage as the one new dependency;
+it is a separate workspace and nothing in the extension or API imports it.
+
+`npm run dev:fixtures` independently serves the local demonstrations at
+`http://127.0.0.1:4173/`. `npm run build` also builds their static output;
+`npm run preview:fixtures` serves `fixtures/dist`. No API, keys or extension is
+needed to use the practice pages. The Playwright configuration starts both the
+fixture preview and health API for automated checks. Stop servers on ports 3000
+and 4173 before `npm run test:e2e` or `npm run test:fixtures`.
+
+## Optional AI service configuration
+
+The AI routes are off until a deployment configures them, and the extension
+never needs them. To enable them, set `SARVAM_API_KEY` (server-side only) and
+`PILOT_TOKEN_SECRET` in `.env`, then mint one expiring credential per
+participant:
+
+```bash
+npm run build --workspace @form-saathi/api
+PILOT_TOKEN_SECRET=<secret> node apps/api/dist/pilot-token.js participant-01 8
+```
+
+That prints a token valid for eight hours, for one person, on that deployment.
+There is no shared permanent credential, and none of these values may ever be
+given a `WXT_` or `VITE_` prefix: that would compile them into the extension.
+Model names and limits are environment values too; see `.env.example`. A shared
+deployment also needs HTTPS, its own origin in `apps/extension/config.ts`, and
+the live provider checks listed in [testing.md](testing.md), which have **not**
+been run.
+
+In the panel, a person turns the cloud feature on under **क्लाउड सुविधा**, pastes
+their credential, and the **बोलकर बताएँ** section offers recording for editable,
+non-identifier fields. Consent and the credential are kept in Chrome's session
+storage for that browser session only. Read-aloud needs a Hindi voice installed
+on the machine; without one the panel says so and the text stays available to
+the screen reader. If Chrome does not show the microphone prompt inside the
+docked panel, open `chrome://settings/content/microphone` and allow the
+extension there, or open the panel page once in a tab to answer the prompt.
 
 The API defaults to `HOST=127.0.0.1`, `PORT=3000`. To override them, copy
 `.env.example` to `.env`, replace the placeholders, and uncomment the desired
