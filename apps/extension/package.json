@@ -1,6 +1,6 @@
 {
   "name": "@form-saathi/extension",
-  "description": "सरकारी फ़ॉर्म समझने, नेविगेट करने और समीक्षा करने में सहायता। विकास संस्करण।",
+  "description": "Accessible form navigation and local review. Development version.",
   "private": true,
   "version": "0.1.0",
   "type": "module",

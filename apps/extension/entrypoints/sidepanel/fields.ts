@@ -1,40 +1,40 @@
-import type { FormField } from '@form-saathi/contracts';
+import { translator, type Translator, type FormField } from '@form-saathi/contracts';
 import { maskIdentifier } from '@form-saathi/rules';
 
 // How a field is described to a person, shared by the card, the list and the
 // review. Values are masked until the person asks, everywhere alike.
 
-export const noField = 'बिना लेबल का फ़ील्ड';
+
 
 /** Values are masked until the person asks, so nothing long is exposed by default. */
-export function fieldValue(field: FormField, revealed: boolean): { prefix: string; value: string | null; maskable: boolean } {
+export function fieldValue(field: FormField, revealed: boolean, t: Translator = translator()): { prefix: string; value: string | null; maskable: boolean } {
   if (field.status === 'inactive') {
-    return { prefix: 'अभी लागू नहीं — यह फ़ील्ड छिपा या निष्क्रिय है।', value: null, maskable: false };
+    return { prefix: t('value.inactive'), value: null, maskable: false };
   }
   if (field.kind === 'checkbox') {
-    return { prefix: field.value ? 'चुना गया।' : 'नहीं चुना गया।', value: null, maskable: false };
+    return { prefix: field.value ? t('value.checked') : t('value.unchecked'), value: null, maskable: false };
   }
   if (field.kind === 'radio-group' || field.kind === 'select') {
     const chosen = field.options.find((option) => option.selected);
     return field.value
-      ? { prefix: 'चुना गया:', value: chosen?.label ?? field.value, maskable: false }
-      : { prefix: 'कोई विकल्प नहीं चुना गया।', value: null, maskable: false };
+      ? { prefix: t('value.selected'), value: chosen?.label ?? field.value, maskable: false }
+      : { prefix: t('value.noChoice'), value: null, maskable: false };
   }
-  if (!field.value) return { prefix: 'अभी खाली है।', value: null, maskable: false };
+  if (!field.value) return { prefix: t('value.empty'), value: null, maskable: false };
   const { masked, text } = maskIdentifier(field.value);
-  if (masked && !revealed) return { prefix: 'मान छिपा है:', value: text, maskable: true };
-  return { prefix: 'मान:', value: field.value, maskable: masked };
+  if (masked && !revealed) return { prefix: t('value.masked'), value: text, maskable: true };
+  return { prefix: t('value.label'), value: field.value, maskable: masked };
 }
 
-export function metaText(field: FormField): string {
-  return [field.required ? 'आवश्यक' : 'वैकल्पिक', field.readOnly ? 'केवल पढ़ें' : null]
+export function metaText(field: FormField, t: Translator = translator()): string {
+  return [field.required ? t('required') : t('optional'), field.readOnly ? t('read-only') : null]
     .filter((part) => part !== null).join(' · ');
 }
 
-export function spokenText(field: FormField, revealed: boolean): string {
-  const value = fieldValue(field, revealed);
-  const parts = [field.label || noField, metaText(field), `${value.prefix} ${value.value ?? ''}`.trim()];
-  if (value.maskable && !revealed) parts.push('पूरा मान सुनने के लिए पहले उसे दिखाएँ।');
+export function spokenText(field: FormField, revealed: boolean, t: Translator = translator()): string {
+  const value = fieldValue(field, revealed, t);
+  const parts = [field.label || t('field.unlabelled'), metaText(field, t), `${value.prefix} ${value.value ?? ''}`.trim()];
+  if (value.maskable && !revealed) parts.push(t('value.revealFirst'));
   if (field.description) parts.push(field.description);
-  return parts.join('। ');
+  return parts.join('. ');
 }

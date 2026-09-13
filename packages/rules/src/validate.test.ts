@@ -263,7 +263,7 @@ describe('identifiers selected by a reviewed meaning', () => {
   it('keeps the OTR rule to OTR fields and never treats other numbers as identifiers', () => {
     const otr = run(nspIssues(), '').find((result) => result.ruleId === 'otr-format');
     expect(otr?.source).toBe('N1');
-    expect(otr?.message).toContain('Aadhaar नहीं');
+    expect(otr?.message).toContain('not Aadhaar');
     // The same 12-digit shape in an unclear field is reported as unknown, not classified.
     const unclear = run(nspComplete(), 'KAVYA SAIN').find((result) => result.fieldId === 'id-nsp-detail');
     expect(unclear?.severity).toBe('unchecked');
@@ -275,7 +275,7 @@ describe('name comparison against a supplied reference', () => {
   it('asks for confirmation instead of reporting an error', () => {
     const results = run(nspIssues(), 'KAVYA SAIN').filter((result) => result.ruleId === 'name-reference');
     expect(results.map((result) => result.severity)).toEqual(['needs-confirmation']);
-    expect(results[0]?.action).toContain('बोलकर वर्तनी तय नहीं होती');
+    expect(results[0]?.action).toContain('Speech cannot establish spelling');
   });
 
   it('stays unchecked when no reference was supplied', () => {
@@ -305,7 +305,7 @@ describe('what is never checked', () => {
   it('reports coverage gaps and unmapped fields as unchecked', () => {
     const fields = [...nspComplete(), field('mystery-field', 'कुछ')];
     const results = run(fields, 'KAVYA SAIN', [{ reason: 'frame', label: 'अभ्यास फ़्रेम' }]);
-    expect(results.find((result) => result.ruleId === 'unmapped-fields')?.message).toContain('1 फ़ील्ड');
+    expect(results.find((result) => result.ruleId === 'unmapped-fields')?.message).toContain('1 fields');
     expect(results.find((result) => result.ruleId === 'coverage-gap')?.severity).toBe('unchecked');
   });
 
@@ -313,7 +313,7 @@ describe('what is never checked', () => {
     const fields = [...nspComplete(), field('mystery-field', '', { required: true })];
     const errors = bySeverity(run(fields, 'KAVYA SAIN'), 'error');
     expect(errors.map((result) => result.fieldId)).toEqual(['id-mystery-field']);
-    expect(errors[0]?.source).toBe('पेज का अपना आवश्यक चिह्न');
+    expect(errors[0]?.source).toBe('page-required');
   });
 
   it('validates nothing at all on a page no pack describes', () => {
@@ -329,7 +329,7 @@ describe('what is never checked', () => {
   it('never reviews an empty or unrelated portal page as a workflow', () => {
     const empty = validateSnapshot({ origin: 'https://voters.eci.gov.in', fields: [], gaps: [], reference: { englishName: '' } });
     expect(empty.map((result) => result.ruleId).sort()).toEqual(['no-readable-fields', 'no-rule-pack']);
-    expect(empty.find((result) => result.ruleId === 'no-rule-pack')?.message).toContain('कोई पढ़ने योग्य फ़ील्ड नहीं');
+    expect(empty.find((result) => result.ruleId === 'no-rule-pack')?.message).toContain('No readable fields');
     expect(summarizeReview(empty, [], []).outcome).toBe('partial-coverage');
 
     for (const origin of ['https://voters.eci.gov.in', 'https://scholarships.gov.in']) {
@@ -341,7 +341,7 @@ describe('what is never checked', () => {
       });
       // The host says which portal; only the workflow's own fields say which form.
       expect(unrelated.map((result) => result.ruleId)).toEqual(['no-rule-pack']);
-      expect(unrelated[0]?.message).toContain('किसी समीक्षित कार्यप्रवाह से मेल नहीं खाता');
+      expect(unrelated[0]?.message).toContain('does not match a reviewed workflow');
       expect(summarizeReview(unrelated, [], []).outcome).not.toBe('clear');
     }
 
@@ -353,7 +353,7 @@ describe('what is never checked', () => {
 
   it('applies a pack on its live host only with the workflow signature, and reports missing fields', () => {
     const complete = validateSnapshot({ origin: 'https://scholarships.gov.in', fields: nspComplete(), gaps: [], reference: { englishName: 'KAVYA SAIN' } });
-    expect(complete.find((result) => result.ruleId === 'live-testing-unverified')?.message).toContain('सत्यापित नहीं');
+    expect(complete.find((result) => result.ruleId === 'live-testing-unverified')?.message).toContain('unverified');
     expect(complete.some((result) => result.ruleId === 'expected-fields-missing')).toBe(false);
     expect(bySeverity(complete, 'error')).toEqual([]);
 
@@ -365,7 +365,7 @@ describe('what is never checked', () => {
     });
     const missing = partial.find((result) => result.ruleId === 'expected-fields-missing');
     expect(missing?.severity).toBe('unchecked');
-    expect(missing?.message).toContain('2 अपेक्षित फ़ील्ड');
+    expect(missing?.message).toContain('2 expected fields');
     expect(missing?.message).toContain('nsp-dob, nsp-pin');
     expect(summarizeReview(partial, [], []).outcome).toBe('partial-coverage');
   });
@@ -405,7 +405,7 @@ describe('date of birth scope', () => {
 
   it('rejects year zero and impossible dates, and accepts leap days', () => {
     expect(errors(dob('01/01/0000'))).toEqual(['date-calendar']);
-    expect(dob('01/01/0000')[0]?.message).toContain('वर्ष 0');
+    expect(dob('01/01/0000')[0]?.message).toContain('Year 0');
     expect(errors(dob('29/02/2024'))).toEqual([]);
     expect(errors(dob('29/02/2023'))).toEqual(['date-calendar']);
     expect(errors(dob('31/02/2000'))).toEqual(['date-calendar']);
@@ -436,12 +436,12 @@ describe('date of birth scope', () => {
     const note = results.find((result) => result.ruleId === 'dob-eligibility-unchecked');
     expect(note?.severity).toBe('unchecked');
     expect(note?.fieldId).toBeNull();
-    expect(note?.message).toContain('न्यूनतम या अधिकतम आयु नहीं');
+    expect(note?.message).toContain('No minimum or maximum age');
     expect(summarizeReview([note!], [], []).permanentLimits).toBe(1);
     // Born today or in year 1: valid dates, and no age judgement either way.
     expect(errors(dob('12/09/2026'))).toEqual([]);
     expect(errors(dob('01/01/0001'))).toEqual([]);
-    expect(dob('12/09/2026').some((result) => /आयु|पात्रता/.test(result.message) && result.severity === 'error')).toBe(false);
+    expect(dob('12/09/2026').some((result) => /age|eligibility/.test(result.message) && result.severity === 'error')).toBe(false);
     // A page without a date-of-birth field carries no such note.
     const noDob = validateSnapshot({ origin: PRACTICE, fields: eciIssues().filter((current) => current.key !== 'eci-dob'), gaps: [], reference: { englishName: '' }, today });
     expect(noDob.some((result) => result.ruleId === 'dob-eligibility-unchecked')).toBe(false);
@@ -455,4 +455,19 @@ describe('date of birth scope', () => {
     const results = validateSnapshot({ origin: PRACTICE, fields, gaps: [], reference: { englishName: '' } });
     expect(results.find((result) => result.fieldId === 'id-eci-dob' && result.severity === 'error')?.ruleId).toBe('date-future');
   });
+});
+
+it('changes presentation only across locales without mutating input or deterministic results', () => {
+  const fields = nspIssues();
+  const input = { origin: 'http://localhost', fields, gaps: [{ reason: 'frame', label: 'Original—frame' }], reference: { englishName: 'KAVYA SAIN' } };
+  const before = JSON.stringify(input);
+  const english = validateSnapshot(input);
+  const canonical = (results: ReturnType<typeof validateSnapshot>) => results.map(({ message: _message, action: _action, ...result }) => result);
+  for (const locale of ['hi', 'es', 'fr', 'ar'] as const) {
+    const translated = validateSnapshot({ ...input, locale });
+    expect(canonical(translated)).toEqual(canonical(english));
+    expect(translated.at(-1)?.message).toContain('Original—frame');
+    expect(translated.at(-1)?.message).not.toBe(english.at(-1)?.message);
+  }
+  expect(JSON.stringify(input)).toBe(before);
 });

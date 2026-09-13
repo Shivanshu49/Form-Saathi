@@ -1,15 +1,33 @@
-@import "tailwindcss";
+/* Imported only by the side-panel document. Never injected by reader.ts. */
+@import '../../../../packages/ui/design.css';
+.panel { max-width: 560px; margin-inline: auto; padding: 0 20px 24px; }
+.panel-header { padding-block: 18px; border-block-end: 1px solid var(--line); }
+.header-controls { display: flex; gap: 8px; align-items: center; margin-block-start: 14px; }
+.header-controls .language-control { flex: 1; min-width: 0; }
+.panel > section { padding-block: 20px; border-block-end: 1px solid var(--line); }
+.page-title { font-size: .9rem; font-weight: 600; }
+.form-status output { font-size: .875rem; display: block; }
+.form-status .muted { font-size: .875rem; }
+.field-label { font-size: 1.45rem; font-weight: 650; letter-spacing: -.015em; }
+.field-value { border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; background: var(--surface); }
+.field-value .button { margin-block-start: 8px; }
+.source-text { font-size: .875rem; }
+.source-text .eyebrow { margin-block-end: 4px; }
+.field-navigation { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.go-field { grid-column: 1 / -1; }
+.review-counts { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; }
+.review-counts > div { display: flex; flex-direction: column; }
+.review-counts dd { order: -1; }
+.review-counts > div + div { border-inline-start: 1px solid var(--line); padding-inline-start: 12px; }
+.review-counts dd { font-size: 1.5rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.review-counts dt { font-size: .75rem; color: var(--muted); }
+.review-button { width: 100%; color: var(--accent); border-color: var(--accent); }
+.acknowledgement { border-block: 1px solid var(--line); padding-block: 16px; }
+.panel > details { border-block-end: 1px solid var(--line); padding-block: 4px; }
+.settings { background: var(--surface); }
+.recording { border-inline-start: 3px solid var(--error); padding-inline-start: 12px; }
+@media (max-width: 320px) { .panel { padding-inline: 12px; } .header-controls { flex-wrap: wrap; } .header-controls > * { flex: 1; } }
 
-@theme {
-  --font-sans: "Nirmala UI", "Noto Sans Devanagari", "Mangal", sans-serif;
-}
-
-html {
-  color-scheme: light;
-  font-size: 18px;
-}
-
-body {
-  margin: 0;
-  background: #faf7ef;
-}
+.entered-table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: .8rem; }
+.entered-table th,.entered-table td { text-align: start; vertical-align: top; padding: 8px 4px; border-block-end: 1px solid var(--line); overflow-wrap: anywhere; }
+.entered-table caption { text-align: start; padding-block: 12px; }

@@ -11,20 +11,22 @@ export default defineConfig({
   retries: 0,
   reporter: 'list',
   projects: [
-    { name: 'extension', testMatch: ['extension.spec.ts', 'reader.spec.ts', 'lifecycle.spec.ts'] },
+    { name: 'extension', testMatch: ['extension.spec.ts', 'reader.spec.ts', 'lifecycle.spec.ts', 'localization.spec.ts'] },
     {
       name: 'practice', testMatch: 'practice.spec.ts',
       use: { channel: 'chromium', baseURL: 'http://127.0.0.1:4173' },
     },
     {
       name: 'web', testMatch: 'web.spec.ts',
-      use: { channel: 'chromium', baseURL: 'http://127.0.0.1:3100' },
+      use: { channel: 'chromium', baseURL: 'http://127.0.0.1:3100', locale: 'hi-IN' },
     },
     ...(live ? [{ name: 'live', testMatch: 'live-sarvam.spec.ts' }] : []),
   ],
   webServer: [
     {
-      command: 'npm run build --workspace @form-saathi/api && npm run start --workspace @form-saathi/api',
+      command: 'npm run build --workspace @form-saathi/api && ' + (live
+        ? 'npm run start --workspace @form-saathi/api'
+        : 'node -e "delete process.env.SARVAM_API_KEY; delete process.env.PILOT_TOKEN_SECRET; import(\'./apps/api/dist/main.js\')"'),
       url: 'http://127.0.0.1:3000/health',
       env: { PORT: '3000', HOST: '127.0.0.1' },
       reuseExistingServer: false, timeout: 30_000,

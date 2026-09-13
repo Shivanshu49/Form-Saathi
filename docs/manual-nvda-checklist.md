@@ -6,6 +6,8 @@ a screen-reader user can use it. Mark a row passed only after it was actually
 performed, and record the exact versions, tester, date and what was observed.
 A row that fails goes to the repository as a defect, not a note.
 
+The [redesign report](redesign/README.md) adds five-language checks. The panel now opens in English; explicitly select Hindi for the Hindi cases below. All remain pending.
+
 Setup to record first: Windows version, Chrome version, NVDA version, Hindi
 voice (name and whether it runs locally), zoom level, high-contrast mode,
 extension build (`git` commit) and whether the API was configured.
@@ -13,7 +15,7 @@ extension build (`git` commit) and whether the API was configured.
 | ID | Area | Check | Expected | Result | Tester / date / notes |
 | --- | --- | --- | --- | --- | --- |
 | F1 | Focus | Activate the toolbar button on a practice tab, then press Alt+Shift+F on another tab | Panel opens for the activated tab; the other tab shows the unbound panel | NOT RUN | |
-| F2 | Focus | Tab through the panel from the top | Order: re-read, previous, next, focus page field, read aloud, stop, reference input, review controls, field list, cloud setup, service check | NOT RUN | |
+| F2 | Focus | Tab through the panel from the top | Order: language, Settings, rescan and support details, current-field navigation, voice controls, Review form and its disclosure, reference, full field list, privacy. Cloud setup and service check are inside Settings | NOT RUN | |
 | F3 | Focus | Activate “मूल फ़ील्ड पर जाएँ” and a list item | Focus lands on the page control and NVDA reads its label | NOT RUN | |
 | F4 | Focus | Press F6 from the page | Focus returns to the docked panel; if it does not, record what does and fix the panel's instruction | NOT RUN | |
 | F5 | Focus | Correct a value in the page and return | Panel shows the new value; the current field and the panel's focus are unchanged | NOT RUN | |
@@ -31,7 +33,7 @@ extension build (`git` commit) and whether the API was configured.
 | E5 | Announcements | Remove the current control from the page (console: `document.querySelector('#eci-pin').remove()`) | One announcement says the field is gone and to choose from the list; no page control receives focus; previous/next still work | NOT RUN | |
 | E6 | Announcements | Type a reference, acknowledge, then navigate the same tab to the other practice form and re-read | The reference input is empty, the acknowledgment reads “दर्ज नहीं”, and no value of the earlier form is read anywhere | NOT RUN | |
 | Z1 | Zoom | 200% and 400% browser zoom | No content or control is lost; no horizontal scrolling of the panel body | NOT RUN | |
-| Z2 | Zoom | Narrow and wide docked panel widths | Buttons wrap; the review table scrolls within itself only | NOT RUN | |
+| Z2 | Zoom | Narrow and wide docked panel widths | Buttons and review cells wrap without horizontal scrolling | NOT RUN | |
 | Z3 | Zoom | Windows high contrast | Focus ring, borders and severity groups remain distinguishable | NOT RUN | |
 | K1 | Keyboard | Complete one Form 6 issues profile with the keyboard alone | All five seeded tasks reachable and correctable without a mouse | NOT RUN | |
 | K2 | Keyboard | Use “अगली समस्या” through every issue | Each moves the current field; the count reads “समस्या n / 5” | NOT RUN | |
@@ -44,7 +46,7 @@ extension build (`git` commit) and whether the API was configured.
 | S5 | Speech | Speak an unambiguous date; then one without a year | First gives DD/MM/YYYY to confirm; second asks for clarification with no value | NOT RUN | |
 | S6 | Speech | Play cloud help audio | Native player operable; content is generic | NOT RUN | |
 | S7 | Speech | Press “रद्द करें” after “रोकें और भेजें” while the service is slow | The cancellation is announced once, with the statement that what was sent is not recalled; the field stays current and navigation continues | NOT RUN | |
-| S8 | Speech | Withdraw consent (“क्लाउड सुविधा बंद करें”) while a recording or request is in progress, then re-enable | Recording and request stop at once; nothing arrives later; re-enabling requires the credential again and works | NOT RUN | |
+| S8 | Speech | Withdraw consent (“क्लाउड सुविधा बंद करें”) while a recording or request is in progress, then re-enable | Recording and request stop at once; nothing arrives later; re-enabling is explicit and needs a valid session credential; no abandoned reply reappears | NOT RUN | |
 | M1 | Microphone | First “रिकॉर्डिंग शुरू करें” in the docked panel on a machine that has never granted the extension the microphone | Chrome's permission prompt is reachable and announced; denying it yields the Hindi explanation and keyboard entry remains possible | NOT RUN | |
 | R1 | Review | Read the review table with table navigation | Rows, headers and statuses are navigable and understood | NOT RUN | |
 | R2 | Review | Acknowledge on a filled profile | Status reads partial coverage because of the frame, never all-clear | NOT RUN | |

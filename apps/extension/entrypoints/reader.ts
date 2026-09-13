@@ -70,6 +70,27 @@ function langOf(element: Element): string {
   return LANGUAGE_TAG.test(declared) ? declared : '';
 }
 
+function sourceMetadata(control: FormControl) {
+  const labelled = document.getElementById(control.getAttribute('aria-labelledby')?.split(/\s+/)[0] ?? '');
+  const label = labelled ?? (control.hasAttribute('aria-label') ? control : control.labels?.[0]) ?? control;
+  const legend = control.closest('fieldset')?.querySelector(':scope > legend');
+  const instructions: { text: string; lang: string }[] = [];
+  for (const id of (control.getAttribute('aria-describedby') ?? '').split(/\s+/)) {
+    const element = document.getElementById(id);
+    if (!element) continue;
+    if (instructions.length) instructions.push({ text: ' ', lang: langOf(element) });
+    const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      instructions.push({ text: node.textContent ?? '', lang: langOf(node.parentElement ?? element) });
+    }
+  }
+  return {
+    labelLang: langOf(label),
+    groupLang: langOf(legend ?? control),
+    instructions,
+  };
+}
+
 function groupOf(element: Element): string {
   const legend = element.closest('fieldset')?.querySelector(':scope > legend');
   return clean(legend?.textContent);
@@ -172,6 +193,7 @@ function readField(control: FormControl, target: Map<string, HTMLElement>): Form
     description: textFromIds(control.getAttribute('aria-describedby')),
     group: groupOf(control),
     lang: langOf(control),
+    ...sourceMetadata(control),
     // A hidden or disabled conditional field is listed, but its leftover value is not.
     status: active ? 'read' : 'inactive',
     required: control.required,
@@ -195,6 +217,8 @@ function readRadioGroup(members: HTMLInputElement[], target: Map<string, HTMLEle
   const fieldId = identify(first);
   const active = members.some(isActive);
   const parent = first.closest('fieldset')?.parentElement;
+  const metadata = sourceMetadata(first);
+  const legend = first.closest('fieldset')?.querySelector(':scope > legend');
   // Focus follows the native tab order: the chosen radio, otherwise the first one.
   target.set(fieldId, checked ?? first);
   return {
@@ -207,6 +231,9 @@ function readRadioGroup(members: HTMLInputElement[], target: Map<string, HTMLEle
     // The group's own legend is the label, so the group name comes from the section above it.
     group: parent ? groupOf(parent) : '',
     lang: langOf(first),
+    ...metadata,
+    labelLang: legend ? langOf(legend) : metadata.labelLang,
+    groupLang: langOf(parent?.closest('fieldset')?.querySelector(':scope > legend') ?? first),
     status: active ? 'read' : 'inactive',
     required: members.some((member) => member.required),
     readOnly: false,
@@ -292,6 +319,7 @@ export default defineUnlistedScript(() => {
       sequence,
       origin: location.origin,
       title: document.title,
+      lang: langOf(document.documentElement),
       fields,
       gaps,
     };
@@ -309,7 +337,7 @@ export default defineUnlistedScript(() => {
    */
   function digestOf(snapshot: FormSnapshot): string {
     const identity = snapshot.fields.map((field) => `${field.fieldId}/${field.form}`).join(' ');
-    return `${snapshot.title}\n${identity}\n${snapshotRevision(snapshot.fields, snapshot.gaps)}`;
+    return `${snapshot.title}/${snapshot.lang}\n${identity}\n${snapshotRevision(snapshot.fields, snapshot.gaps)}`;
   }
 
   function send(reply: ReaderReply): void {

@@ -90,7 +90,7 @@ async function main(): Promise<number> {
   const post = (path: string, body: unknown, auth = token, signal?: AbortSignal) => fetch(`${origin}${path}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', authorization: `Bearer ${auth}` },
-    body: JSON.stringify(body),
+    body: JSON.stringify({ ...(body as object), locale: 'hi' }),
     signal: signal ?? null,
   });
 
@@ -113,10 +113,11 @@ async function main(): Promise<number> {
     if (supplied) {
       recording = { bytes: await readFile(supplied), type: supplied.endsWith('.webm') ? 'audio/webm' : 'audio/wav', source: 'approved recording' };
     } else {
-      const synth = await timed(() => new SarvamProvider(readConfig()).synthesize(UNAMBIGUOUS, new AbortController().signal));
+      const synth = await timed(() => new SarvamProvider(readConfig()).synthesize(UNAMBIGUOUS, new AbortController().signal, 'hi'));
       recording = { bytes: Buffer.from(synth.value, 'base64'), type: 'audio/wav', source: `synthesized “${UNAMBIGUOUS}” in ${synth.ms} ms` };
     }
     const form = new FormData();
+    form.append('locale', 'hi');
     form.append('audio', new Blob([new Uint8Array(recording.bytes)], { type: recording.type }), 'recording.wav');
     const transcribe = await timed(() => fetch(`${origin}/v1/speech/transcribe`, {
       method: 'POST', headers: { authorization: `Bearer ${token}` }, body: form,

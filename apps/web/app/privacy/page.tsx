@@ -1,41 +1,9 @@
-import type { Metadata } from 'next';
-
-export const metadata: Metadata = { title: 'गोपनीयता' };
-
+'use client';
+import { useLocale } from '../../../../packages/ui/Locale';
 export default function Privacy() {
-  return (
-    <article className="space-y-8">
-      <h1 className="text-3xl font-bold">गोपनीयता और क्लाउड बोली</h1>
-      <section aria-labelledby="local-heading" className="space-y-3">
-        <h2 id="local-heading" className="text-2xl font-bold">बिना सर्वर के क्या होता है</h2>
-        <ul className="list-disc space-y-2 pl-6">
-          <li>पैनल फ़ॉर्म को आपके ब्राउज़र में ही पढ़ता और जाँचता है। पढ़ी हुई जानकारी न सहेजी जाती है, न कहीं भेजी जाती है, न किसी लॉग में जाती है।</li>
-          <li>पासवर्ड, OTP, CAPTCHA के उत्तर और कार्ड की जानकारी कभी पढ़ी ही नहीं जाती; पैनल केवल बताता है कि वे मौजूद हैं।</li>
-          <li>लंबी पहचान-संख्याएँ पैनल में छिपी रहती हैं जब तक आप उन्हें दिखाने को न कहें।</li>
-          <li>आपकी लिखी संदर्भ वर्तनी केवल खुले पैनल की स्मृति में रहती है।</li>
-        </ul>
-      </section>
-      <section aria-labelledby="cloud-heading" className="space-y-3">
-        <h2 id="cloud-heading" className="text-2xl font-bold">क्लाउड सुविधा चालू करने पर क्या भेजा जाता है</h2>
-        <ul className="list-disc space-y-2 pl-6">
-          <li>केवल वह रिकॉर्डिंग जिसे आप “रोकें और भेजें” से भेजते हैं। रिकॉर्डिंग में जो बोला गया वह पूरा जाता है — कच्ची आवाज़ से कुछ हटाया नहीं जा सकता। इसलिए पहचान-संख्या और गुप्त फ़ील्ड के लिए रिकॉर्डिंग बंद रहती है।</li>
-          <li>उससे बना पाठ, जब आप “इस पाठ को समझें” दबाते हैं, चुने हुए फ़ील्ड के लेबल, निर्देश, अनुभाग और विकल्पों के साथ — उसका मान नहीं। आपके कहने पर वही लेबल, निर्देश, अनुभाग और विकल्प अर्थ पूछने के लिए भी जाते हैं।</li>
-          <li>लेबल और निर्देश पेज पर जैसे लिखे हैं वैसे ही जाते हैं। पेज ने उनमें कोई निजी बात लिखी हो तो वह भी जाएगी; इसकी कोई गारंटी नहीं कि इनमें निजी जानकारी नहीं है।</li>
-          <li>भेजने से पहले “रद्द करें” दबाने पर रिकॉर्डिंग हट जाती है और कुछ नहीं जाता। भेजने के बाद रद्द करने पर सर्वर भाषा-सेवा को भेजा जा रहा अपना अनुरोध भी रोक देता है और जवाब छोड़ दिया जाता है; पर जो भाषा-सेवा तक पहुँच चुका वह वापस नहीं आता। क्लाउड सुविधा बंद करने पर चल रही रिकॉर्डिंग और अनुरोध वहीं रुक जाते हैं।</li>
-          <li>पढ़ा हुआ पूरा फ़ॉर्म (स्नैपशॉट) और आपकी लिखी संदर्भ वर्तनी कभी किसी अनुरोध में नहीं जाते; वे केवल खुले पैनल में रहते हैं।</li>
-          <li>सर्वर रिकॉर्डिंग, पाठ, फ़ील्ड की जानकारी या संदर्भ को न सहेजता है, न लॉग करता है। यह उन्हें भाषा सेवा को भेजता है और जवाब लौटाकर भूल जाता है।</li>
-          <li>सर्वर से आया हर सुझाव पहले स्थानीय नियमों से जाँचा जाता है और फिर भी केवल सुझाव रहता है; उसे फ़ॉर्म में आप स्वयं भरते हैं।</li>
-          <li>सहायता का ऑडियो सेवा के अपने सामान्य पाठ का होता है; आपके फ़ॉर्म की कोई बात उस तरह नहीं सुनाई जाती।</li>
-        </ul>
-      </section>
-      <section aria-labelledby="never-heading" className="space-y-3 border-l-4 border-amber pl-4">
-        <h2 id="never-heading" className="text-2xl font-bold">जो कभी नहीं माँगा जाता</h2>
-        <p className="max-w-[75ch]">
-          न यह वेबसाइट और न एक्सटेंशन आपसे Aadhaar, असली आवेदन, या कोई अन्य संवेदनशील दस्तावेज़ अपलोड करने को
-          कहता है। अभ्यास केवल काल्पनिक प्रोफ़ाइल से होता है। एक्सटेंशन में कोई प्रदाता-कुंजी नहीं होती; पायलट
-          क्रेडेंशियल समय-सीमित है और ब्राउज़र बंद होने पर मिट जाता है।
-        </p>
-      </section>
-    </article>
-  );
+  const { t } = useLocale();
+  return <article className="prose stack"><h1>{t('web.privacy')}</h1><section className="stack"><h2>{t('web.storage')}</h2><p>{t('privacy.local')}</p><p>{t('web.storageText')}</p><p>{t('reference.help')}</p></section>
+    <section className="stack"><h2>{t('cloud.heading')}</h2><p>{t('cloud.consent')}</p><p>{t('speech.recordingHelp')}</p><p>{t('web.serverPrivacy')}</p><p>{t('cloud.session')}</p></section>
+    <section className="stack"><h2>{t('speech.heading')}</h2><p>{t('speech.localOnly')}</p><p>{t('help.description')}</p></section><p className="notice">{t('web.neverUpload')}</p>
+  </article>;
 }

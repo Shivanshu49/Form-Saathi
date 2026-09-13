@@ -4,11 +4,11 @@ import type {
   FormField,
   FormSnapshot,
   HelpTopic,
-  InterpretedKind,
 } from '@form-saathi/contracts';
-import { speechEligibility, validateSnapshot, type RulePack, type ValidationResult } from '@form-saathi/rules';
+import { displayExplanation, speechCapabilities } from '@form-saathi/contracts';
+import { useLocale } from '../../../../packages/ui/Locale';
+import { speechEligibility, validateSnapshot, type RulePack } from '@form-saathi/rules';
 import {
-  failureText,
   interpretField,
   interpretValue,
   speechHelp,
@@ -22,100 +22,20 @@ import {
 // rules, and nothing here ever writes into the page.
 
 const RECORDING_LIMIT_MS = 15_000;
-const button = 'min-h-12 rounded-md border-2 border-teal-950 px-3 py-2 font-bold hover:bg-stone-200 focus-visible:outline-3 focus-visible:outline-offset-4 focus-visible:outline-teal-900 aria-disabled:border-stone-500 aria-disabled:text-stone-600';
-const input = 'min-h-12 w-full rounded-md border-2 border-teal-950 px-3 py-2 focus-visible:outline-3 focus-visible:outline-offset-4 focus-visible:outline-teal-900';
-
-const severityText: Record<ValidationResult['severity'], string> = {
-  error: 'सुधार चाहिए',
-  'needs-confirmation': 'पुष्टि चाहिए',
-  unchecked: 'जाँचा नहीं गया',
-};
-
-const kindText: Record<InterpretedKind, string> = {
-  name: 'नाम',
-  date: 'तारीख',
-  address: 'पता',
-  place: 'स्थान',
-  identifier: 'पहचान संख्या',
-  contact: 'संपर्क',
-  choice: 'विकल्प',
-  document: 'दस्तावेज़',
-  amount: 'राशि',
-  other: 'अन्य',
-};
-
-const topicText: Record<HelpTopic, string> = {
-  navigation: 'पैनल में आगे-पीछे जाना',
-  review: 'समीक्षा के तीन हिस्से',
-  'speech-consent': 'बोलकर बताने की सुविधा',
-  privacy: 'जानकारी कहाँ रहती है',
-};
-
-const requirementText = {
-  required: 'आवश्यक',
-  optional: 'वैकल्पिक',
-  conditional: 'शर्त पर आवश्यक',
-  'read-only': 'केवल पढ़ें',
-};
-
-const blockedText = {
-  inactive: 'यह फ़ील्ड अभी छिपा या निष्क्रिय है, इसलिए इसके लिए रिकॉर्डिंग नहीं होती।',
-  'read-only': 'यह फ़ील्ड केवल पढ़ने के लिए है और यहाँ बदलता नहीं, इसलिए रिकॉर्डिंग नहीं होती।',
-  identifier: 'यह पहचान-संख्या या संवेदनशील फ़ील्ड है। कच्ची आवाज़ से कुछ हटाया नहीं जा सकता, इसलिए इसे बोलकर नहीं भेजा जाता। मान कीबोर्ड से लिखें।',
-};
-
+const button = 'button';
+const input = '';
 export function ServiceAccess({ session, onSession }: { session: Session; onSession: (session: Session) => void }) {
+  const { t } = useLocale();
   const [draft, setDraft] = useState('');
-  return (
-    <section aria-labelledby="service-access-heading" className="space-y-4">
-      <h2 id="service-access-heading" className="text-xl font-bold">क्लाउड सुविधा</h2>
-      <div className="space-y-3 border-l-4 border-amber-700 pl-4">
-        <p>
-          चालू करने पर: आपकी चुनी हुई रिकॉर्डिंग ट्रांसक्रिप्शन के लिए सेवा को भेजी जाती है, और आपके
-          भेजने पर उसका पाठ, चुने हुए फ़ील्ड के लेबल, निर्देश, अनुभाग और विकल्पों के साथ (उसका मान
-          नहीं), समझने के लिए भेजा जाता है। पेज के लेबल या निर्देश में जो लिखा है वह वैसा ही जाता है।
-          रिकॉर्डिंग में जो बोला गया वह पूरा जाता है — कच्ची आवाज़ से कुछ हटाया नहीं जा सकता। इसलिए
-          पहचान-संख्या और गुप्त फ़ील्ड के लिए रिकॉर्डिंग बंद रहती है। बंद करने पर चल रही रिकॉर्डिंग
-          हटा दी जाती है और चल रहे अनुरोध रद्द हो जाते हैं। कुछ भी अपने आप फ़ॉर्म में नहीं भरा जाता।
-        </p>
-        <button
-          type="button"
-          onClick={() => onSession({ ...session, consent: !session.consent })}
-          aria-pressed={session.consent}
-          className={button}
-        >
-          {session.consent ? 'क्लाउड सुविधा बंद करें' : 'समझ गया — क्लाउड सुविधा चालू करें'}
-        </button>
-      </div>
-      <label htmlFor="pilot-credential" className="block font-bold">पायलट क्रेडेंशियल</label>
-      <input
-        id="pilot-credential"
-        type="password"
-        value={draft}
-        autoComplete="off"
-        onChange={(event) => setDraft(event.target.value)}
-        aria-describedby="pilot-credential-help"
-        className={input}
-      />
-      <p id="pilot-credential-help">
-        {session.token === '' ? 'अभी कोई क्रेडेंशियल नहीं है।' : 'क्रेडेंशियल सहेजा हुआ है।'} यह केवल इस
-        ब्राउज़र सत्र में रहता है; ब्राउज़र बंद करने पर मिट जाता है। एक्सटेंशन में कोई कुंजी नहीं होती।
-      </p>
-      <div className="flex flex-wrap gap-3">
-        <button
-          type="button"
-          onClick={() => { onSession({ ...session, token: draft.trim() }); setDraft(''); }}
-          aria-disabled={draft.trim() === ''}
-          className={button}
-        >
-          क्रेडेंशियल सहेजें
-        </button>
-        <button type="button" onClick={() => onSession({ ...session, token: '' })} className={button}>
-          क्रेडेंशियल हटाएँ
-        </button>
-      </div>
-    </section>
-  );
+  return <section aria-labelledby="service-access-heading" className="stack">
+    <h2 id="service-access-heading">{t('cloud.heading')}</h2><p className="small">{t('cloud.consent')}</p>
+    <button type="button" className={button} aria-pressed={session.consent} onClick={() => onSession({ ...session, consent: !session.consent })}>{t(session.consent ? 'cloud.disable' : 'cloud.enable')}</button>
+    <label htmlFor="pilot-credential">{t('cloud.credential')}</label>
+    <input id="pilot-credential" type="password" dir="ltr" autoComplete="off" value={draft} onChange={(event) => setDraft(event.target.value)} aria-describedby="pilot-credential-help" />
+    <p id="pilot-credential-help" className="small"><span>{t(session.token ? 'cloud.saved' : 'cloud.noCredential')}</span> {t('cloud.session')}</p>
+    <div className="actions"><button type="button" className={button} aria-disabled={!draft.trim()} onClick={() => { if (draft.trim()) { onSession({ ...session, token: draft.trim() }); setDraft(''); } }}>{t('cloud.save')}</button>
+    <button type="button" className={button} onClick={() => onSession({ ...session, token: '' })}>{t('cloud.remove')}</button></div>
+  </section>;
 }
 
 type Stage =
@@ -144,6 +64,10 @@ export function SpeechAssist({ field, snapshot, reference, pack, session, onGoTo
   onGoToField: (field: FormField) => void;
   announce: (text: string) => void;
 }) {
+  const { locale, t } = useLocale();
+  const capability = speechCapabilities[locale];
+  const speechSection = useRef<HTMLElement>(null);
+  const hadFocus = useRef(false);
   const [stage, setStage] = useState<Stage>({ kind: 'idle' });
   const [seconds, setSeconds] = useState(0);
   const [meaning, setMeaning] = useState<Meaning>({ kind: 'none' });
@@ -159,7 +83,7 @@ export function SpeechAssist({ field, snapshot, reference, pack, session, onGoTo
 
   const eligibility = speechEligibility(field, pack);
   const rule = pack?.fields.find((candidate) => candidate.key === field.key) ?? null;
-  const ready = session.consent && session.token !== '';
+  const ready = session.consent && session.token !== '' && capability.interpretation !== null;
 
   function clearTimers() {
     for (const timer of timers.current) clearTimeout(timer);
@@ -189,12 +113,12 @@ export function SpeechAssist({ field, snapshot, reference, pack, session, onGoTo
   // Leaving the field or the panel, withdrawing consent, removing the
   // credential or the field becoming ineligible all stop everything at once.
   useLayoutEffect(() => {
-    access.current = { consent: session.consent, token: session.token, recordable: eligibility.allowed };
+    access.current = { consent: session.consent, token: session.token, recordable: eligibility.allowed && capability.transcription !== null };
     return () => {
       access.current = { consent: false, token: '', recordable: false };
       invalidate();
     };
-  }, [session.consent, session.token, eligibility.allowed, snapshot.documentId, field.fieldId]);
+  }, [session.consent, session.token, eligibility.allowed, snapshot.documentId, field.fieldId, locale, capability.transcription]);
 
   function currentSession(id: number, recording = false): boolean {
     return id === generation.current && access.current.consent && access.current.token !== ''
@@ -202,6 +126,7 @@ export function SpeechAssist({ field, snapshot, reference, pack, session, onGoTo
   }
 
   const checks = useMemo(() => (stage.kind !== 'suggestion' ? [] : validateSnapshot({
+    locale,
     origin: snapshot.origin,
     gaps: [],
     reference: { englishName: reference },
@@ -209,11 +134,11 @@ export function SpeechAssist({ field, snapshot, reference, pack, session, onGoTo
     fields: snapshot.fields.map((candidate) => (
       candidate.fieldId === field.fieldId ? { ...candidate, value: stage.value } : candidate
     )),
-  }).filter((result) => result.fieldId === field.fieldId)), [field.fieldId, reference, snapshot, stage]);
+  }).filter((result) => result.fieldId === field.fieldId)), [field.fieldId, locale, reference, snapshot, stage]);
 
   function fail(failure: Failure, text: string | null) {
     setStage({ kind: 'failed', failure, text });
-    announce(failureText[failure]);
+    announce(t(`error.${failure}`));
   }
 
   async function startRecording() {
@@ -275,13 +200,13 @@ export function SpeechAssist({ field, snapshot, reference, pack, session, onGoTo
     }
     setSeconds(0);
     setStage({ kind: 'recording' });
-    announce('रिकॉर्डिंग शुरू। रोकने के लिए “रोकें और भेजें” दबाएँ, बिना भेजे हटाने के लिए “रद्द करें”।');
+    announce(t('speech.started'));
     for (let tick = 1; tick <= RECORDING_LIMIT_MS / 1000; tick += 1) {
       timers.current.push(setTimeout(() => { if (ownsRecorder()) setSeconds(tick); }, tick * 1000));
     }
     timers.current.push(setTimeout(() => {
       if (ownsRecorder() && active.state === 'recording') {
-        announce('15 सेकंड पूरे। रिकॉर्डिंग भेजी जा रही है।');
+        announce(t('speech.limit'));
         active.stop();
       }
     }, RECORDING_LIMIT_MS));
@@ -297,8 +222,8 @@ export function SpeechAssist({ field, snapshot, reference, pack, session, onGoTo
     const sent = stage.kind === 'transcribing' || stage.kind === 'interpreting';
     invalidate();
     announce(sent
-      ? 'अनुरोध रद्द किया गया। जो भेजा जा चुका था वह वापस नहीं आता; उसका जवाब अब नहीं लिया जाएगा।'
-      : 'रिकॉर्डिंग हटा दी गई। कुछ नहीं भेजा गया।');
+      ? t('speech.cancelledSent')
+      : t('speech.cancelledLocal'));
   }
 
   function begin(id: number): AbortController | null {
@@ -321,8 +246,8 @@ export function SpeechAssist({ field, snapshot, reference, pack, session, onGoTo
     const controller = begin(id);
     if (controller === null) return;
     setStage({ kind: 'transcribing' });
-    announce('रिकॉर्डिंग भेजी गई; पाठ बन रहा है…');
-    const outcome = await transcribe(audio, access.current.token, controller.signal);
+    announce(t('speech.transcribing'));
+    const outcome = await transcribe(audio, access.current.token, controller.signal, locale);
     if (!stillCurrent(id, controller)) return;
     if (!outcome.ok) {
       if (outcome.failure !== 'cancelled') fail(outcome.failure, null);
@@ -334,7 +259,7 @@ export function SpeechAssist({ field, snapshot, reference, pack, session, onGoTo
       return;
     }
     setStage({ kind: 'transcript', text });
-    announce('पाठ मिला। उसे सुधारें, फिर “इस पाठ को समझें” दबाएँ।');
+    announce(t('speech.transcriptReady'));
   }
 
   async function interpret(text: string) {
@@ -344,7 +269,7 @@ export function SpeechAssist({ field, snapshot, reference, pack, session, onGoTo
     const controller = begin(id);
     if (controller === null) return;
     setStage({ kind: 'interpreting', text: trimmed });
-    const outcome = await interpretValue(trimmed, field, access.current.token, controller.signal);
+    const outcome = await interpretValue(trimmed, field, access.current.token, controller.signal, locale);
     if (!stillCurrent(id, controller)) return;
     if (!outcome.ok) {
       if (outcome.failure !== 'cancelled') fail(outcome.failure, trimmed);
@@ -353,11 +278,11 @@ export function SpeechAssist({ field, snapshot, reference, pack, session, onGoTo
     const { interpretation } = outcome.data;
     if (interpretation.outcome === 'unknown') {
       setStage({ kind: 'clarify', text: trimmed, explanation: interpretation.explanation });
-      announce('स्पष्टीकरण चाहिए; कोई मान नहीं सुझाया गया।');
+      announce(t('speech.clarify'));
       return;
     }
     setStage({ kind: 'suggestion', text: trimmed, value: interpretation.value, explanation: interpretation.explanation });
-    announce(`सुझाव तैयार: ${interpretation.value}। स्थानीय जाँच नीचे है।`);
+    announce(t('speech.suggestionReady', { value: interpretation.value }));
   }
 
   async function askMeaning() {
@@ -366,250 +291,103 @@ export function SpeechAssist({ field, snapshot, reference, pack, session, onGoTo
     const controller = begin(id);
     if (controller === null) return;
     setMeaning({ kind: 'asking' });
-    const outcome = await interpretField(field, access.current.token, controller.signal);
+    const outcome = await interpretField(field, access.current.token, controller.signal, locale);
     if (!stillCurrent(id, controller)) return;
     if (!outcome.ok) {
       setMeaning({ kind: 'failed', failure: outcome.failure });
-      announce(failureText[outcome.failure]);
+      announce(t(`error.${outcome.failure}`));
       return;
     }
     setMeaning({ kind: 'pending', result: outcome.data.interpretation });
     announce(outcome.data.interpretation.outcome === 'unknown'
-      ? 'सेवा को इस फ़ील्ड का अर्थ स्पष्ट नहीं लगा।'
-      : 'अर्थ का अनुमान मिला; उसे पढ़कर पुष्टि करें।');
+      ? t('meaning.unknown')
+      : t('meaning.ready'));
   }
 
   async function copySuggestion(value: string) {
     try {
       await navigator.clipboard.writeText(value);
-      announce('सुझाव क्लिपबोर्ड में है। पेज के फ़ील्ड में इसे आप स्वयं चिपकाएँ।');
+      announce(t('speech.copied'));
     } catch {
-      announce('क्लिपबोर्ड उपलब्ध नहीं है। सुझाव को पढ़कर स्वयं लिखें।');
+      announce(t('speech.copyFailed'));
     }
   }
 
-  const heading = 'बोलकर बताएँ';
-  return (
-    <section aria-labelledby="speech-heading" className="space-y-4">
-      <h2 id="speech-heading" className="text-xl font-bold">{heading}</h2>
-      <p className="text-sm">
-        पैक में दर्ज: {rule ? `${requirementText[rule.requirement]} · स्रोत ${rule.source}` : 'यह फ़ील्ड नियम पैक में नहीं है।'}
-      </p>
+  useLayoutEffect(() => {
+    // A removed stage button must not leave keyboard focus at the document root.
+    if (hadFocus.current && document.hasFocus() && document.activeElement === document.body) {
+      speechSection.current?.querySelector<HTMLElement>('textarea, button')?.focus();
+    }
+  }, [stage.kind]);
 
-      {!eligibility.allowed ? <p>{blockedText[eligibility.reason]}</p> : !ready ? (
-        <p>
-          {session.consent
-            ? 'बोलकर बताने के लिए पहले पायलट क्रेडेंशियल सहेजें। कीबोर्ड से पढ़ना और जाँच वैसे ही चलते रहते हैं।'
-            : 'बोलकर बताने के लिए पहले नीचे “क्लाउड सुविधा” चालू करें। कीबोर्ड से पढ़ना और जाँच वैसे ही चलते रहते हैं।'}
-        </p>
-      ) : (
-        <div className="space-y-3 border-l-4 border-teal-900 pl-4">
-          {stage.kind === 'idle' ? (
-            <>
-              <p>
-                रिकॉर्डिंग अधिकतम 15 सेकंड की होती है। “रोकें और भेजें” दबाने पर वह सेवा को जाती है;
-                उससे पहले “रद्द करें” दबाने पर कुछ नहीं भेजा जाता। भेजने के बाद रद्द करने पर सर्वर
-                भाषा-सेवा को भेजा जा रहा अपना अनुरोध भी रोक देता है और जवाब छोड़ दिया जाता है; पर जो
-                भाषा-सेवा तक पहुँच चुका वह वापस नहीं आता।
-              </p>
-              <button type="button" onClick={() => void startRecording()} className={button}>रिकॉर्डिंग शुरू करें</button>
-            </>
-          ) : null}
-          {stage.kind === 'recording' ? (
-            <>
-              <p className="font-bold">
-                <span aria-hidden="true" className="mr-2 inline-block h-3 w-3 rounded-full bg-red-700" />
-                रिकॉर्डिंग चल रही है — {seconds} सेकंड (अधिकतम 15)
-              </p>
-              <div className="flex flex-wrap gap-3">
-                <button type="button" onClick={stopRecording} className={button}>रोकें और भेजें</button>
-                <button type="button" onClick={cancel} className={button}>रद्द करें</button>
-              </div>
-            </>
-          ) : null}
-          {stage.kind === 'transcribing' || stage.kind === 'interpreting' ? (
-            <>
-              <p>{stage.kind === 'transcribing' ? 'पाठ बन रहा है…' : 'सुझाव बन रहा है…'}</p>
-              <button type="button" onClick={cancel} className={button}>रद्द करें</button>
-            </>
-          ) : null}
-          {stage.kind === 'transcript' ? (
-            <>
-              <label htmlFor="transcript" className="block font-bold">सुना गया पाठ — ज़रूरत हो तो सुधारें</label>
-              <textarea
-                id="transcript"
-                value={stage.text}
-                rows={3}
-                onChange={(event) => setStage({ kind: 'transcript', text: event.target.value })}
-                aria-describedby="transcript-help"
-                className={input}
-              />
-              <p id="transcript-help" className="text-sm">यह पाठ सेवा से आया है और गलत हो सकता है। समझने के लिए भेजने से पहले उसे ठीक कर लें।</p>
-              <div className="flex flex-wrap gap-3">
-                <button type="button" onClick={() => void interpret(stage.text)} className={button}>इस पाठ को समझें</button>
-                <button type="button" onClick={() => setStage({ kind: 'idle' })} className={button}>फिर से रिकॉर्ड करें</button>
-              </div>
-            </>
-          ) : null}
-          {stage.kind === 'suggestion' ? (
-            <>
-              <p>सुझाया गया मान: <strong lang={field.lang || undefined}>{stage.value}</strong></p>
-              <p>{stage.explanation}</p>
-              {checks.length === 0 ? (
-                <p>स्थानीय जाँच में कोई कमी नहीं मिली। यह पुष्टि नहीं है: पोर्टल के नियम अलग हो सकते हैं।</p>
-              ) : (
-                <ul className="space-y-2">
-                  {checks.map((result, index) => (
-                    <li key={`${result.ruleId}-${index}`}><strong>{severityText[result.severity]}:</strong> {result.message}</li>
-                  ))}
-                </ul>
-              )}
-              <p>यह सुझाव है, निर्णय नहीं। इसे फ़ॉर्म में आप स्वयं भरेंगे; पैनल कुछ नहीं भरता।</p>
-              <div className="flex flex-wrap gap-3">
-                <button type="button" onClick={() => onGoToField(field)} className={button}>मूल फ़ील्ड पर जाएँ</button>
-                <button type="button" onClick={() => void copySuggestion(stage.value)} className={button}>सुझाव कॉपी करें</button>
-                <button type="button" onClick={() => setStage({ kind: 'idle' })} className={button}>फिर से रिकॉर्ड करें</button>
-              </div>
-            </>
-          ) : null}
-          {stage.kind === 'clarify' ? (
-            <>
-              <p>स्पष्ट करें: {stage.explanation}</p>
-              <p>कोई मान नहीं सुझाया गया, क्योंकि जो कहा गया वह पूरा या स्पष्ट नहीं था।</p>
-              <div className="flex flex-wrap gap-3">
-                <button type="button" onClick={() => setStage({ kind: 'transcript', text: stage.text })} className={button}>पाठ सुधारें</button>
-                <button type="button" onClick={() => setStage({ kind: 'idle' })} className={button}>फिर से रिकॉर्ड करें</button>
-              </div>
-            </>
-          ) : null}
-          {stage.kind === 'failed' ? (
-            <>
-              <p>{failureText[stage.failure]}</p>
-              <div className="flex flex-wrap gap-3">
-                {stage.text === null ? null : (
-                  <button type="button" onClick={() => setStage({ kind: 'transcript', text: stage.text ?? '' })} className={button}>
-                    पाठ पर लौटें
-                  </button>
-                )}
-                <button type="button" onClick={() => setStage({ kind: 'idle' })} className={button}>फिर से कोशिश करें</button>
-              </div>
-            </>
-          ) : null}
-        </div>
-      )}
-
-      <h3 className="text-lg font-bold">इस फ़ील्ड का अर्थ</h3>
-      {!ready ? (
-        <p className="text-sm">अर्थ पूछने के लिए क्लाउड सुविधा और क्रेडेंशियल चाहिए। भेजा जाता है: केवल लेबल, निर्देश, अनुभाग और विकल्प — मान नहीं।</p>
-      ) : (
-        <div className="space-y-3">
-          {meaning.kind === 'none' || meaning.kind === 'failed' ? (
-            <>
-              {meaning.kind === 'failed' ? <p>{failureText[meaning.failure]}</p> : null}
-              <p className="text-sm">भेजा जाएगा: केवल इस फ़ील्ड का लेबल, निर्देश, अनुभाग और विकल्प — मान नहीं।</p>
-              <button type="button" onClick={() => void askMeaning()} className={button}>इस फ़ील्ड का अर्थ पूछें</button>
-            </>
-          ) : null}
-          {meaning.kind === 'asking' ? <p>अर्थ पूछा जा रहा है…</p> : null}
-          {meaning.kind === 'pending' || meaning.kind === 'accepted' ? (
-            <div className="space-y-2 border-l-4 border-amber-700 pl-4">
-              {meaning.result.outcome === 'unknown' ? (
-                <p>सेवा को अर्थ स्पष्ट नहीं लगा: {meaning.result.explanation}</p>
-              ) : (
-                <>
-                  <p>AI का अनुमान: {kindText[meaning.result.kind]}</p>
-                  <p>{meaning.result.explanation}</p>
-                  {meaning.result.example ? <p>उदाहरण: {meaning.result.example}</p> : null}
-                </>
-              )}
-              <p className="text-sm">
-                {meaning.kind === 'accepted'
-                  ? 'आपने इसे मान लिया है। यह फिर भी अनुमान है; पोर्टल के निर्देश ही मान्य हैं।'
-                  : 'यह अनुमान है, पोर्टल का नियम नहीं। ऊपर पैक की जानकारी और पेज के निर्देश से मिलाकर ही मानें।'}
-              </p>
-              <div className="flex flex-wrap gap-3">
-                {meaning.kind === 'pending' && meaning.result.outcome === 'suggestion' ? (
-                  <button type="button" onClick={() => setMeaning({ kind: 'accepted', result: meaning.result })} className={button}>
-                    मिलाकर देखा — मान लें
-                  </button>
-                ) : null}
-                <button type="button" onClick={() => setMeaning({ kind: 'none' })} className={button}>हटाएँ</button>
-              </div>
-            </div>
-          ) : null}
-        </div>
-      )}
-    </section>
-  );
+  return <section ref={speechSection} onFocusCapture={() => { hadFocus.current = true; }} onBlurCapture={(event) => { if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget as Node)) hadFocus.current = false; }} aria-labelledby="speech-heading" className="stack speech-assist">
+    <h2 id="speech-heading">{t('speech.heading')}</h2>
+    {capability.transcription === null ? <p className="small muted">{t('speech.unavailable')}</p> : <>
+      {!ready ? <p className="small muted">{t('cloud.setup')}</p> : null}
+      {!eligibility.allowed ? <p className="small">{t(`speech.blocked.${eligibility.reason}`)}</p> : !ready ? null : <div className="stack">
+        {stage.kind === 'idle' ? <><p className="small">{t('speech.recordingHelp')}</p><div className="actions"><button type="button" className={button} onClick={() => void startRecording()}>{t('speech.start')}</button><button type="button" className={button} onClick={() => setStage({ kind: 'transcript', text: '' })}>{t('speech.type')}</button></div></> : null}
+        {stage.kind === 'recording' ? <div className="recording stack"><p><strong>{t('speech.recording', { seconds })}</strong></p><div className="actions"><button type="button" onClick={stopRecording} className={button}>{t('speech.send')}</button><button type="button" onClick={cancel} className={button}>{t('cancel')}</button></div></div> : null}
+        {stage.kind === 'transcribing' || stage.kind === 'interpreting' ? <><p>{t(stage.kind === 'transcribing' ? 'speech.transcribing' : 'speech.interpreting')}</p><button type="button" onClick={cancel} className={button}>{t('cancel')}</button></> : null}
+        {stage.kind === 'transcript' ? <><label htmlFor="transcript">{t('speech.transcript')}</label><textarea id="transcript" value={stage.text} rows={3} dir="auto" onChange={(event) => setStage({ kind: 'transcript', text: event.target.value })} aria-describedby="transcript-help" className={input} /><p id="transcript-help" className="small">{t('speech.transcriptHelp')}</p><div className="actions"><button type="button" className={button} onClick={() => void interpret(stage.text)}>{t('speech.interpret')}</button><button type="button" className={button} onClick={() => setStage({ kind: 'idle' })}>{t('speech.again')}</button></div></> : null}
+        {stage.kind === 'suggestion' ? <>
+          <p>{t('speech.suggested')} <strong><bdi lang={field.lang || undefined}>{stage.value}</bdi></strong></p>
+          <p className="eyebrow">{t('meaning.generated')}</p><p>{displayExplanation(stage.explanation)}</p>
+          {!checks.length ? <p>{t('review.noIssue')}</p> : <ul className="issue-list">{checks.map((result, index) => <li className={`issue ${result.severity}`} key={`${result.ruleId}-${index}`}><strong>{t(`severity.${result.severity}`)}:</strong> {result.message}</li>)}</ul>}
+          <p className="small">{t('speech.suggestionHelp')}</p><div className="actions"><button type="button" className={button} onClick={() => onGoToField(field)}>{t('field.go')}</button><button type="button" className={button} onClick={() => void copySuggestion(stage.value)}>{t('speech.copy')}</button><button type="button" className={button} onClick={() => setStage({ kind: 'idle' })}>{t('speech.again')}</button></div>
+        </> : null}
+        {stage.kind === 'clarify' ? <><p>{displayExplanation(stage.explanation)}</p><p>{t('speech.clarify')}</p><div className="actions"><button type="button" className={button} onClick={() => setStage({ kind: 'transcript', text: stage.text })}>{t('speech.edit')}</button><button type="button" className={button} onClick={() => setStage({ kind: 'idle' })}>{t('speech.again')}</button></div></> : null}
+        {stage.kind === 'failed' ? <><p>{t(`error.${stage.failure}`)}</p><div className="actions">{stage.text === null ? null : <button type="button" className={button} onClick={() => setStage({ kind: 'transcript', text: stage.text ?? '' })}>{t('speech.back')}</button>}<button type="button" className={button} onClick={() => setStage({ kind: 'idle' })}>{t('speech.retry')}</button></div></> : null}
+      </div>}
+      {ready ? <div className="stack">
+        {rule ? <p className="small">{t(rule.requirement)} · {t('source')} <bdi>{rule.source}</bdi></p> : <p className="small">{t('review.unmapped')}</p>}
+        <p className="small">{t('meaning.help')}</p>
+          {meaning.kind === 'none' || meaning.kind === 'failed' ? <>{meaning.kind === 'failed' ? <p>{t(`error.${meaning.failure}`)}</p> : null}<button type="button" className={button} onClick={() => void askMeaning()}>{t('meaning.ask')}</button></> : null}
+          {meaning.kind === 'asking' ? <><p>{t('meaning.asking')}</p><button type="button" className={button} onClick={cancel}>{t('cancel')}</button></> : null}
+          {meaning.kind === 'pending' || meaning.kind === 'accepted' ? <div className="stack">
+            <p className="eyebrow">{t('meaning.generated')}</p>
+            {meaning.result.outcome === 'unknown' ? <p>{t('meaning.unknown')}</p> : <p>{t(`kind.${meaning.result.kind}`)}</p>}
+            <p>{displayExplanation(meaning.result.explanation)}</p>
+            {meaning.result.outcome === 'suggestion' && meaning.result.example ? <p>{t('meaning.example')} <bdi>{meaning.result.example}</bdi></p> : null}
+            <p className="small">{t(meaning.kind === 'accepted' ? 'meaning.accepted' : 'meaning.confirm')}</p>
+            <div className="actions">{meaning.kind === 'pending' && meaning.result.outcome === 'suggestion' ? <button type="button" className={button} onClick={() => setMeaning({ kind: 'accepted', result: meaning.result })}>{t('meaning.accept')}</button> : null}<button type="button" className={button} onClick={() => setMeaning({ kind: 'none' })}>{t('meaning.dismiss')}</button></div>
+          </div> : null}
+      </div> : null}
+    </>}
+  </section>;
 }
 
 export function CloudHelp({ session, announce }: { session: Session; announce: (text: string) => void }) {
+  const { locale, t } = useLocale();
   const [topic, setTopic] = useState<HelpTopic>('navigation');
-  const [help, setHelp] = useState<{ kind: 'idle' } | { kind: 'loading' } | { kind: 'ready'; url: string; text: string } | { kind: 'failed'; failure: Failure }>({ kind: 'idle' });
+  const [help, setHelp] = useState<{ kind: 'idle' } | { kind: 'loading' } | { kind: 'ready'; url: string; text: string; topic: HelpTopic } | { kind: 'failed'; failure: Failure }>({ kind: 'idle' });
   const request = useRef<AbortController | null>(null);
   const url = help.kind === 'ready' ? help.url : null;
-  const ready = session.consent && session.token !== '';
-
+  const ready = session.consent && session.token !== '' && speechCapabilities[locale].speechOutput !== null;
   useEffect(() => () => { if (url !== null) URL.revokeObjectURL(url); }, [url]);
-  // Withdrawing consent, removing the credential or leaving the panel drops a
-  // pending request; its reply, if it still arrives, is not shown.
   useLayoutEffect(() => () => {
-    request.current?.abort();
-    request.current = null;
-    setHelp((current) => (current.kind === 'loading' ? { kind: 'idle' } : current));
-  }, [session.consent, session.token]);
-
+    request.current?.abort(); request.current = null;
+    setHelp({ kind: 'idle' });
+  }, [session.consent, session.token, locale]);
   async function fetchHelp() {
-    // The button stays focusable and explains itself; the guard is here, not in aria.
-    if (!ready) {
-      announce('इसके लिए पहले क्लाउड सुविधा चालू करें और क्रेडेंशियल सहेजें।');
-      return;
-    }
+    if (!ready) { announce(t('cloud.setup')); return; }
     if (request.current !== null) return;
-    const controller = new AbortController();
-    request.current = controller;
-    setHelp({ kind: 'loading' });
-    const outcome = await speechHelp(topic, session.token, controller.signal);
+    const controller = new AbortController(); request.current = controller; setHelp({ kind: 'loading' });
+    const outcome = await speechHelp(topic, session.token, controller.signal, locale);
     if (request.current !== controller) return;
     request.current = null;
-    if (!outcome.ok) {
-      setHelp({ kind: 'failed', failure: outcome.failure });
-      announce(failureText[outcome.failure]);
-      return;
-    }
+    if (!outcome.ok) { setHelp({ kind: 'failed', failure: outcome.failure }); announce(t(`error.${outcome.failure}`)); return; }
     const bytes = Uint8Array.from(atob(outcome.data.audio), (character) => character.charCodeAt(0));
-    setHelp({ kind: 'ready', url: URL.createObjectURL(new Blob([bytes], { type: 'audio/wav' })), text: outcome.data.text });
-    announce('सहायता का ऑडियो तैयार है। चलाने के लिए प्लेयर का उपयोग करें।');
+    setHelp({ kind: 'ready', url: URL.createObjectURL(new Blob([bytes], { type: 'audio/wav' })), text: outcome.data.text, topic });
+    announce(t('help.ready'));
   }
-
-  return (
-    <section aria-labelledby="help-heading" className="space-y-4">
-      <h2 id="help-heading" className="text-xl font-bold">सहायता सुनें</h2>
-      <p>
-        यह सामान्य सहायता है जो सेवा अपने पास रखती है; आपके फ़ॉर्म की कोई जानकारी नहीं भेजी जाती।
-        फ़ील्ड के मान इस तरह कभी नहीं सुनाए जाते।
-      </p>
-      <label htmlFor="help-topic" className="block font-bold">विषय</label>
-      <select id="help-topic" value={topic} onChange={(event) => setTopic(event.target.value as HelpTopic)} className={input}>
-        {(Object.keys(topicText) as HelpTopic[]).map((candidate) => (
-          <option key={candidate} value={candidate}>{topicText[candidate]}</option>
-        ))}
-      </select>
-      <button type="button" onClick={() => void fetchHelp()} aria-disabled={!ready || help.kind === 'loading'} className={button}>
-        सहायता का ऑडियो लाएँ
-      </button>
-      {!ready ? <p className="text-sm">इसके लिए क्लाउड सुविधा और क्रेडेंशियल चाहिए।</p> : null}
-      {help.kind === 'loading' ? <p>ऑडियो लाया जा रहा है…</p> : null}
-      {help.kind === 'failed' ? <p>{failureText[help.failure]}</p> : null}
-      {help.kind === 'ready' ? (
-        <>
-          <p>{help.text}</p>
-          {/* Native controls: play, pause and seek all work from the keyboard. */}
-          <audio controls src={help.url} aria-label={`सहायता: ${topicText[topic]}`} className="w-full">
-            <track kind="captions" />
-          </audio>
-        </>
-      ) : null}
-    </section>
-  );
+  return <section aria-labelledby="help-heading" className="stack"><h2 id="help-heading">{t('help.heading')}</h2><p className="small">{t('help.description')}</p>
+    {speechCapabilities[locale].speechOutput === null ? <p>{t('speech.unavailable')}</p> : <>
+      <label htmlFor="help-topic">{t('help.topic')}</label><select id="help-topic" value={topic} onChange={(event) => setTopic(event.target.value as HelpTopic)}>{(['navigation', 'review', 'speech-consent', 'privacy'] as const).map((item) => <option key={item} value={item}>{t(`help.${item}`)}</option>)}</select>
+      <button type="button" className={button} aria-disabled={!ready || help.kind === 'loading'} onClick={() => void fetchHelp()}>{t('help.fetch')}</button>
+      {!ready ? <p className="small">{t('cloud.setup')}</p> : null}
+      {help.kind === 'loading' ? <p>{t('help.loading')}</p> : null}
+      {help.kind === 'failed' ? <p>{t(`error.${help.failure}`)}</p> : null}
+      {help.kind === 'ready' ? <><p>{displayExplanation(help.text)}</p><audio controls src={help.url} aria-label={t('help.audio', { topic: t(`help.${help.topic}`) })} style={{ width: '100%' }}><track kind="captions" /></audio></> : null}
+    </>}
+  </section>;
 }

@@ -1,5 +1,7 @@
 import {
   apiErrorSchema,
+  speechCapabilities,
+  type Locale,
   fieldInterpretResponseSchema,
   speechHelpResponseSchema,
   transcribeResponseSchema,
@@ -18,7 +20,7 @@ import { API_ORIGIN } from '../../config';
 
 // The panel's only client for the optional service. Every reply is parsed
 // against the shared contract before the panel looks at it, every request has
-// its own timeout, and a failure is a bounded code the panel turns into Hindi.
+// its own timeout, and a failure is a bounded code the panel turns into localized text.
 
 export type Failure =
   | ApiError['error']
@@ -31,27 +33,6 @@ export type Failure =
   | 'nothing_recorded';
 
 export type Outcome<T> = { ok: true; data: T } | { ok: false; failure: Failure };
-
-export const failureText: Record<Failure, string> = {
-  invalid_request: 'सेवा ने अनुरोध स्वीकार नहीं किया। पैनल को फिर पढ़ें और दोबारा कोशिश करें।',
-  unauthorized: 'पायलट क्रेडेंशियल मान्य नहीं है या समाप्त हो गया है। नया क्रेडेंशियल लें।',
-  rate_limited: 'बहुत जल्दी-जल्दी अनुरोध हुए। एक मिनट रुककर फिर कोशिश करें।',
-  payload_too_large: 'रिकॉर्डिंग बहुत बड़ी है। छोटी रिकॉर्डिंग करें।',
-  unsupported_media: 'यह रिकॉर्डिंग का रूप सेवा नहीं समझती।',
-  provider_unavailable: 'भाषा सेवा अभी उपलब्ध नहीं है। कीबोर्ड से काम जारी रखें और बाद में फिर कोशिश करें।',
-  provider_response_invalid: 'भाषा सेवा का जवाब समझ में नहीं आया, इसलिए कोई सुझाव नहीं लिया गया।',
-  service_not_configured: 'यह सेवा इस सर्वर पर चालू नहीं है। पढ़ना और जाँच बिना सेवा के चलते रहते हैं।',
-  cancelled: 'अनुरोध रद्द किया गया।',
-  not_found: 'सेवा पर यह सुविधा नहीं मिली।',
-  internal: 'सेवा में कोई गड़बड़ी हुई। बाद में फिर कोशिश करें।',
-  no_credential: 'पहले पायलट क्रेडेंशियल भरें।',
-  network: 'सेवा से संपर्क नहीं हो पाया। कीबोर्ड से काम जारी रखें।',
-  timeout: 'सेवा ने समय पर जवाब नहीं दिया। कीबोर्ड से काम जारी रखें और बाद में फिर कोशिश करें।',
-  invalid_response: 'सेवा का जवाब अनुबंध से मेल नहीं खाया, इसलिए उसे नहीं लिया गया।',
-  microphone_denied: 'माइक्रोफ़ोन की अनुमति नहीं मिली। Chrome की साइट सेटिंग में इस एक्सटेंशन को माइक की अनुमति दें, या मान कीबोर्ड से लिखें।',
-  microphone_unavailable: 'कोई माइक्रोफ़ोन नहीं मिला। मान कीबोर्ड से लिखें।',
-  nothing_recorded: 'रिकॉर्डिंग में कुछ नहीं मिला। फिर से कोशिश करें।',
-};
 
 const REQUEST_TIMEOUT_MS = 20_000;
 
@@ -104,8 +85,10 @@ export function fieldContext(field: FormField): FieldContext {
   };
 }
 
-export function transcribe(audio: Blob, token: string, signal: AbortSignal): Promise<Outcome<TranscribeResponse>> {
+export function transcribe(audio: Blob, token: string, signal: AbortSignal, locale: Locale = 'en'): Promise<Outcome<TranscribeResponse>> {
+  if (speechCapabilities[locale].transcription === null) return Promise.resolve({ ok: false, failure: 'service_not_configured' });
   const form = new FormData();
+  form.append('locale', locale);
   form.append('audio', audio, 'recording.webm');
   return call('/v1/speech/transcribe', { method: 'POST', body: form }, transcribeResponseSchema, token, signal);
 }
@@ -119,16 +102,20 @@ export function interpretValue(
   field: FormField,
   token: string,
   signal: AbortSignal,
+  locale: Locale = 'en',
 ): Promise<Outcome<ValueInterpretResponse>> {
-  return call('/v1/values/interpret', json({ transcript, field: fieldContext(field) }), valueInterpretResponseSchema, token, signal);
+  if (speechCapabilities[locale].interpretation === null) return Promise.resolve({ ok: false, failure: 'service_not_configured' });
+  return call('/v1/values/interpret', json({ locale, transcript, field: fieldContext(field) }), valueInterpretResponseSchema, token, signal);
 }
 
-export function interpretField(field: FormField, token: string, signal: AbortSignal): Promise<Outcome<FieldInterpretResponse>> {
-  return call('/v1/fields/interpret', json({ field: fieldContext(field) }), fieldInterpretResponseSchema, token, signal);
+export function interpretField(field: FormField, token: string, signal: AbortSignal, locale: Locale = 'en'): Promise<Outcome<FieldInterpretResponse>> {
+  if (speechCapabilities[locale].interpretation === null) return Promise.resolve({ ok: false, failure: 'service_not_configured' });
+  return call('/v1/fields/interpret', json({ locale, field: fieldContext(field) }), fieldInterpretResponseSchema, token, signal);
 }
 
-export function speechHelp(topic: HelpTopic, token: string, signal: AbortSignal): Promise<Outcome<SpeechHelpResponse>> {
-  return call('/v1/speech/help', json({ topic }), speechHelpResponseSchema, token, signal);
+export function speechHelp(topic: HelpTopic, token: string, signal: AbortSignal, locale: Locale = 'en'): Promise<Outcome<SpeechHelpResponse>> {
+  if (speechCapabilities[locale].interpretation === null) return Promise.resolve({ ok: false, failure: 'service_not_configured' });
+  return call('/v1/speech/help', json({ locale, topic }), speechHelpResponseSchema, token, signal);
 }
 
 // The pilot credential and the cloud consent live in the session storage

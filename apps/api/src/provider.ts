@@ -1,3 +1,4 @@
+import { speechCapabilities, type CloudLocale } from '@form-saathi/contracts';
 import { z } from 'zod';
 import type { Config } from './config.js';
 import { ApiFailure } from './http.js';
@@ -14,10 +15,10 @@ export type AudioUpload = { bytes: Buffer; filename: string; contentType: string
 export type Transcription = { transcript: string; languageCode: string | null };
 
 export interface AiProvider {
-  transcribe(audio: AudioUpload, signal: AbortSignal): Promise<Transcription>;
+  transcribe(audio: AudioUpload, signal: AbortSignal, locale: CloudLocale): Promise<Transcription>;
   /** Returns model output already validated against `schema`, or throws. */
   interpret<T>(request: InterpretRequest<T>, signal: AbortSignal): Promise<T>;
-  synthesize(text: string, signal: AbortSignal): Promise<string>;
+  synthesize(text: string, signal: AbortSignal, locale: CloudLocale): Promise<string>;
 }
 
 export type InterpretRequest<T> = {
@@ -132,11 +133,11 @@ export class SarvamProvider implements AiProvider {
     }
   }
 
-  async transcribe(audio: AudioUpload, signal: AbortSignal): Promise<Transcription> {
+  async transcribe(audio: AudioUpload, signal: AbortSignal, locale: CloudLocale): Promise<Transcription> {
     const form = new FormData();
     form.append('file', new Blob([new Uint8Array(audio.bytes)], { type: audio.contentType }), audio.filename);
     form.append('model', this.config.transcribeModel);
-    form.append('language_code', 'hi-IN');
+    form.append('language_code', speechCapabilities[locale].transcription);
     const response = await this.send('/speech-to-text', { method: 'POST', body: form }, signal);
     const parsed = transcriptionResponse.safeParse(await this.json(response, signal));
     if (!parsed.success) {
@@ -179,13 +180,13 @@ export class SarvamProvider implements AiProvider {
     return result.data;
   }
 
-  async synthesize(text: string, signal: AbortSignal): Promise<string> {
+  async synthesize(text: string, signal: AbortSignal, locale: CloudLocale): Promise<string> {
     const response = await this.send('/text-to-speech', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         text,
-        language_code: 'hi-IN',
+        language_code: speechCapabilities[locale].speechOutput,
         model: this.config.speechModel,
         speaker: this.config.speechSpeaker,
         output_audio_codec: 'wav',

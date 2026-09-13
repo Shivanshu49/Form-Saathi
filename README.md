@@ -1,21 +1,28 @@
-# Form Saathi — फ़ॉर्म साथी
+# Form Saathi
 
-Accessible government-form navigation and review in Hindi, built for desktop
-Chrome alongside screen readers, particularly NVDA.
+An accessible online form assistant for blind and low-vision users, built for
+desktop Chrome alongside screen readers. Read the current field, move through a
+form, and review local checks before correcting and submitting on the original page.
 
-The extension opens a Hindi side panel for the tab you activate it on, reads
-that page's form fields, checks them against local reviewed rule packs, and lets
-you move through them and jump to any field in the page — with the keyboard
-alone. Long identifiers stay masked until you ask, and an optional read-aloud
-control never starts on its own. Fictional NSP and ECI Form 6 practice pages are
-included. With the optional service configured, a person can speak a value for
-a field, correct the transcript, and get a suggestion the local rules check
-before they apply it themselves. A final review summarises what was found,
-walks through open issues, and records that the person read it — tied to the
-exact data reviewed, and invalidated by any later change. No rule pack has
-been tested against a live portal and no live provider call has been made.
-The selected NSP scope is AY 2026–27, Basic Information → General Information.
-Both portals' live support remains **unverified**.
+The extension and companion website open in **English**. Choose **हिन्दी,
+Español, Français, or العربية** explicitly in the language selector; that preference
+is remembered. Arabic uses right-to-left layout. Source instructions and entered
+values retain their original text and language.
+
+Optional cloud transcription, field explanations and generic help audio currently
+support **English and Hindi** through Sarvam. Cloud consent and a pilot credential
+are configured in **Settings**. Other interface languages retain keyboard
+navigation, text reading and local review. Personal readback requires an installed
+local voice in the selected language and an explicit action.
+
+Reviewed practice adapters cover parts of NSP General Information (AY 2026-27)
+and ECI Form 6. Both live portals remain **unverified**. A multilingual interface
+does not establish worldwide validation support. No acceptance, eligibility or
+identity decision is made, and nothing is filled or submitted automatically.
+
+See the [redesign and localization delivery](docs/redesign/README.md) for the
+interaction flow, speech matrix, actual screenshots, verification and pending
+native-speaker and NVDA review. Existing audit evidence remains in `docs/`.
 
 ## Setup
 
@@ -49,18 +56,17 @@ It leaves browser startup to you:
    practice form, for example `http://127.0.0.1:4173/nsp.html`.
 4. Activate the toolbar action, or press `Alt+Shift+F`, on that tab. The panel
    opens for that tab and lists its fields, values and coverage limits.
-5. Tab through the panel: **फ़ॉर्म फिर पढ़ें**, then **पिछला फ़ील्ड** and
-   **अगला फ़ील्ड** to move between fields, **मूल फ़ील्ड पर जाएँ** to put focus on
-   the page control, and **पढ़कर सुनाएँ** / **पढ़ना रोकें** for optional speech.
-   Press F6 to come back to the panel from the page.
-6. Change or insert a field in the page; the panel follows without losing your
-   place. Long identifiers show as **मान छिपा है** until you press
-   **पूरा मान दिखाएँ**.
-7. Read **समीक्षा** for what the local rules found, grouped into
-   **सुधार चाहिए**, **पुष्टि चाहिए** and **जाँचा नहीं गया**, each with its
-   source and next action. Type your document's exact English spelling under
-   **आपका संदर्भ** to have the name compared; it is never saved or sent.
-8. Tab to **सेवा की स्थिति जाँचें** and press Enter. Expect **सेवा उपलब्ध है।**
+5. Use **Previous**, **Next**, and **Go to field**. Press F6 to return from
+   the original page. **All fields** opens the full navigation list.
+6. Long identifiers remain masked until **Show full value**. **Read aloud** uses
+   only an installed local voice, and starts only when requested.
+7. Choose **Review form** for errors, confirmations, unchecked items and their
+   next actions. **Document reference** accepts the exact reference spelling.
+   **I have read the displayed review** records an acknowledgment of this data;
+   changing the form or reference invalidates it.
+8. Open **Settings** for cloud consent, the session-only pilot credential,
+   generic help audio and **Check service status**. **Back to form** restores
+   focus to the Settings button.
 
 The API listens at `http://127.0.0.1:3000`; that button is a service check only.
 What the panel reads stays in the browser: no page contents, snapshots or form

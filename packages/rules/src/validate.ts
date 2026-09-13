@@ -1,4 +1,5 @@
-import { selectRulePack, type FieldRule, type PackSelection, type RulePack } from './packs.js';
+import { translator, type Locale, type Translator } from '@form-saathi/contracts';
+import { selectRulePack, type FieldRule, type RulePack } from './packs.js';
 
 // Deterministic local checks. Nothing here contacts a service, guesses a field's
 // meaning from its value, or decides eligibility, identity or acceptance.
@@ -11,9 +12,9 @@ export type ValidationResult = {
   /** The panel's field identifier, or null for a result about the whole page. */
   fieldId: string | null;
   severity: Severity;
-  /** Concise Hindi explanation. */
+  /** Localized explanation, rendered from stable message keys. */
   message: string;
-  /** Suggested next action, in Hindi. */
+  /** Localized next action. */
   action: string;
   /** Source register or fixture-assumption id behind the rule, when it has one. */
   source: string | null;
@@ -36,6 +37,8 @@ export type ValidationField = {
 export type CalendarDate = { year: number; month: number; day: number };
 
 export type ValidationInput = {
+  /** Presentation only. Never participates in validation or review revisions. */
+  locale?: Locale;
   origin: string;
   fields: readonly ValidationField[];
   gaps: readonly { reason: string; label: string }[];
@@ -57,12 +60,6 @@ const ISO_DATE = /^(\d{4,})-(\d{2})-(\d{2})$/;
 const SIX_DIGITS = /^\d{6}$/;
 const FOURTEEN_DIGITS = /^\d{14}$/;
 const IFSC_CODE = /^[A-Z]{4}0[A-Z0-9]{6}$/;
-
-const gapText: Record<string, string> = {
-  frame: 'अलग फ़्रेम — इसकी सामग्री नहीं पढ़ी गई',
-  sensitive: 'संवेदनशील फ़ील्ड — जानबूझकर नहीं पढ़ा गया',
-  'unsupported-control': 'असमर्थित नियंत्रण — नहीं पढ़ा गया',
-};
 
 /** Devanagari digits map one to one onto 0-9; no number words are interpreted. */
 export function normalizeDigits(value: string): string {
@@ -147,6 +144,7 @@ function requiredCheck(
   field: ValidationField,
   rule: FieldRule,
   fields: readonly ValidationField[],
+  t: Translator,
 ): ValidationResult[] {
   if (rule.requirement === 'read-only' || rule.requirement === 'optional') return [];
   if (rule.requirement === 'conditional') {
@@ -156,8 +154,8 @@ function requiredCheck(
         ruleId: 'conditional-unknown',
         fieldId: field.fieldId,
         severity: 'unchecked',
-        message: `${field.label}: यह कब आवश्यक है, यह तय करने वाला फ़ील्ड नहीं मिला।`,
-        action: 'पोर्टल के निर्देश स्वयं पढ़ें।',
+        message: t('v.conditional', { label: field.label }),
+        action: t('v.readPortal'),
         source: rule.source,
       }];
     }
@@ -168,8 +166,8 @@ function requiredCheck(
     ruleId: 'required-value',
     fieldId: field.fieldId,
     severity: 'error',
-    message: `${field.label}: यह जानकारी अभी नहीं भरी गई।`,
-    action: isChoice(field) ? 'फ़ील्ड पर जाएँ और विकल्प चुनें।' : 'फ़ील्ड पर जाएँ और भरें।',
+    message: t('v.required', { label: field.label }),
+    action: isChoice(field) ? t('v.choose') : t('v.fill'),
     source: rule.source,
   }];
 }
@@ -179,35 +177,35 @@ function requiredCheck(
  * the page's own date control declares. Validity only: no minimum age, maximum
  * age or historical cutoff is assumed, because no reviewed source states one.
  */
-function dateCheck(field: ValidationField, rule: FieldRule, today: CalendarDate): ValidationResult[] {
+function dateCheck(field: ValidationField, rule: FieldRule, today: CalendarDate, t: Translator): ValidationResult[] {
   const value = text(field);
   if (value === '') return [];
   const control = field.constraints?.control ?? 'text';
   const parsed = parseDate(value, control);
   const action = rule.requirement === 'read-only'
-    ? 'यह जानकारी दूसरी जगह से आती है; सुधार वहीं करना होगा।'
-    : 'तारीख फिर देखें और सुधारें।';
+    ? t('v.upstream')
+    : t('v.dateAction');
   const error = (ruleId: string, message: string, next = action): ValidationResult => ({
-    ruleId, fieldId: field.fieldId, severity: 'error', message: `${field.label}: ${message}`, action: next, source: rule.source,
+    ruleId, fieldId: field.fieldId, severity: 'error', message: message, action: next, source: rule.source,
   });
   if ('problem' in parsed) {
     const { problem } = parsed;
     switch (problem.kind) {
       case 'format':
         return [error('date-format', control === 'date'
-          ? 'तारीख पढ़ी नहीं जा सकी; तारीख नियंत्रण में उसे फिर चुनें।'
-          : 'तारीख दिन/महीना/वर्ष के रूप में नहीं लिखी है।', `${action} जैसे 15/08/2000।`)];
+          ? t('v.dateNative', { label: field.label })
+          : t('v.dateFormat', { label: field.label }), t('v.dateExample', { action }))];
       case 'year':
-        return [error('date-calendar', 'वर्ष 0 कोई वर्ष नहीं होता; चार अंकों का वास्तविक वर्ष लिखें।')];
+        return [error('date-calendar', t('v.dateYear', { label: field.label }))];
       case 'month':
-        return [error('date-calendar', 'महीना 1 से 12 के बीच होना चाहिए।')];
+        return [error('date-calendar', t('v.dateMonth', { label: field.label }))];
       case 'day':
-        return [error('date-calendar', `महीना ${problem.month}, वर्ष ${problem.year} में केवल ${problem.days} दिन होते हैं।`)];
+        return [error('date-calendar', t('v.dateDay', { label: field.label, ...problem }))];
     }
   }
   const { date } = parsed;
   if (compareDates(date, today) > 0) {
-    return [error('date-future', `यह तारीख आज (${formatDate(today)}) के बाद की है; जन्म तारीख भविष्य की नहीं हो सकती।`)];
+    return [error('date-future', t('v.dateFuture', { label: field.label, today: formatDate(today) }))];
   }
   // Only a native date control enforces its own bounds; text inputs have none.
   if (control === 'date') {
@@ -217,14 +215,14 @@ function dateCheck(field: ValidationField, rule: FieldRule, today: CalendarDate)
       if ('problem' in limit) continue;
       const outside = edge === 'min' ? compareDates(date, limit.date) < 0 : compareDates(date, limit.date) > 0;
       if (outside) {
-        return [error('date-bounds', `पेज इस फ़ील्ड में ${formatDate(limit.date)} ${edge === 'min' ? 'से पहले' : 'के बाद'} की तारीख नहीं लेता।`)];
+        return [error('date-bounds', t(edge === 'min' ? 'v.dateMin' : 'v.dateMax', { label: field.label, date: formatDate(limit.date) }))];
       }
     }
   }
   return [];
 }
 
-function identifierCheck(field: ValidationField, rule: FieldRule): ValidationResult[] {
+function identifierCheck(field: ValidationField, rule: FieldRule, t: Translator): ValidationResult[] {
   const value = normalizeDigits(text(field));
   if (value === '') return [];
   switch (rule.meaning) {
@@ -233,8 +231,8 @@ function identifierCheck(field: ValidationField, rule: FieldRule): ValidationRes
         ruleId: 'pin-format',
         fieldId: field.fieldId,
         severity: 'error',
-        message: `${field.label}: इस अभ्यास में PIN छह अंकों का माना गया है; अभी ${value.length} वर्ण हैं।`,
-        action: 'छह अंकों का डाक PIN भरें।',
+        message: t('v.pin', { label: field.label, count: value.length }),
+        action: t('v.pinAction'),
         source: rule.source,
       }];
     case 'nsp-otr':
@@ -242,8 +240,8 @@ function identifierCheck(field: ValidationField, rule: FieldRule): ValidationRes
         ruleId: 'otr-format',
         fieldId: field.fieldId,
         severity: 'error',
-        message: `${field.label}: NSP के अनुसार OTR 14 अंकों का होता है; अभी ${value.length} वर्ण हैं। यह Aadhaar नहीं है।`,
-        action: 'अपना OTR संदर्भ फिर देखें।',
+        message: t('v.otr', { label: field.label, count: value.length }),
+        action: t('v.otrAction'),
         source: 'N1',
       }];
     case 'ifsc':
@@ -251,8 +249,8 @@ function identifierCheck(field: ValidationField, rule: FieldRule): ValidationRes
         ruleId: 'ifsc-format',
         fieldId: field.fieldId,
         severity: 'error',
-        message: `${field.label}: IFSC 11 वर्णों का होता है — पहले 4 अक्षर बैंक, पाँचवाँ 0, अंतिम 6 शाखा।`,
-        action: 'अपनी पासबुक या बैंक से IFSC फिर देखें।',
+        message: t('v.ifsc', { label: field.label }),
+        action: t('v.ifscAction'),
         source: 'B1',
       }];
     // No verified specification is on file, so nothing about these is checked.
@@ -261,8 +259,8 @@ function identifierCheck(field: ValidationField, rule: FieldRule): ValidationRes
         ruleId: 'aadhaar-unchecked',
         fieldId: field.fieldId,
         severity: 'unchecked',
-        message: `${field.label}: Aadhaar की सत्यापित विधि इस संस्करण में दर्ज नहीं है, इसलिए न रूप जाँचा गया, न checksum।`,
-        action: 'अपने Aadhaar पत्र से स्वयं मिलान करें।',
+        message: t('v.aadhaar', { label: field.label }),
+        action: t('v.aadhaarAction'),
         source: 'U1',
       }];
     case 'aadhaar-eid':
@@ -270,8 +268,8 @@ function identifierCheck(field: ValidationField, rule: FieldRule): ValidationRes
         ruleId: 'aadhaar-eid-unchecked',
         fieldId: field.fieldId,
         severity: 'unchecked',
-        message: `${field.label}: EID (नामांकन क्रमांक) Aadhaar संख्या से अलग है, और इसकी सत्यापित विधि दर्ज नहीं है।`,
-        action: 'अपनी नामांकन पर्ची से स्वयं मिलान करें।',
+        message: t('v.eid', { label: field.label }),
+        action: t('v.eidAction'),
         source: 'U1',
       }];
     default:
@@ -283,6 +281,7 @@ function nameCheck(
   field: ValidationField,
   rule: FieldRule,
   reference: string,
+  t: Translator,
 ): ValidationResult[] {
   const value = text(field);
   const wanted = reference.replace(/\s+/g, ' ').trim();
@@ -292,8 +291,8 @@ function nameCheck(
       ruleId: 'name-reference',
       fieldId: field.fieldId,
       severity: 'unchecked',
-      message: `${field.label} खाली है, इसलिए वर्तनी की तुलना नहीं हुई।`,
-      action: 'खाली छोड़ना हो तो छोड़ें; भरने पर तुलना फिर होगी।',
+      message: t('v.nameEmpty', { label: field.label }),
+      action: t('v.nameEmptyAction'),
       source: rule.source,
     }];
   }
@@ -302,8 +301,8 @@ function nameCheck(
       ruleId: 'name-reference',
       fieldId: field.fieldId,
       severity: 'unchecked',
-      message: `${field.label}: आपने कोई संदर्भ वर्तनी नहीं दी, इसलिए तुलना नहीं हुई।`,
-      action: 'पैनल में अपने दस्तावेज़ की सटीक अंग्रेज़ी वर्तनी लिखें।',
+      message: t('v.nameReference', { label: field.label }),
+      action: t('v.nameReferenceAction'),
       source: null,
     }];
   }
@@ -312,16 +311,16 @@ function nameCheck(
     ruleId: 'name-reference',
     fieldId: field.fieldId,
     severity: 'needs-confirmation',
-    message: `${field.label}: फ़ॉर्म में “${value}” है, आपके संदर्भ में “${wanted}”।`,
-    action: 'अपने दस्तावेज़ से तय करें कि कौन सी वर्तनी सही है। बोलकर वर्तनी तय नहीं होती।'
+    message: t('v.nameMismatch', { label: field.label, value, wanted }),
+    action: t('v.nameAction')
       + (rule.requirement === 'read-only'
-        ? ' यह फ़ील्ड यहाँ नहीं बदलता; सुधार वहीं से होगा जहाँ से यह आता है।'
+        ? ` ${t('v.upstream')}`
         : ''),
     source: null,
   }];
 }
 
-function meaningNotes(field: ValidationField, rule: FieldRule): ValidationResult[] {
+function meaningNotes(field: ValidationField, rule: FieldRule, t: Translator): ValidationResult[] {
   const results: ValidationResult[] = [];
   const value = text(field);
   if (rule.meaning === 'unknown' && value !== '') {
@@ -329,8 +328,8 @@ function meaningNotes(field: ValidationField, rule: FieldRule): ValidationResult
       ruleId: 'unknown-meaning',
       fieldId: field.fieldId,
       severity: 'unchecked',
-      message: `${field.label}: इस फ़ील्ड का अर्थ तय नहीं है, इसलिए जाँच नहीं हुई। अंकों की संख्या से पहचान का प्रकार नहीं माना गया।`,
-      action: 'पोर्टल के अपने निर्देश पढ़कर स्वयं जाँचें।',
+      message: t('v.unknown', { label: field.label }),
+      action: t('v.readPortal'),
       source: rule.source,
     });
   }
@@ -339,24 +338,24 @@ function meaningNotes(field: ValidationField, rule: FieldRule): ValidationResult
       ruleId: 'devanagari-digits',
       fieldId: field.fieldId,
       severity: 'unchecked',
-      message: `${field.label}: मान में देवनागरी अंक हैं। पोर्टल इन्हें स्वीकार करता है या नहीं, यह जाँचा नहीं गया।`,
-      action: 'ज़रूरत लगे तो 0-9 अंकों में लिखें।',
+      message: t('v.digits', { label: field.label }),
+      action: t('v.digitsAction'),
       source: null,
     });
   }
   return results;
 }
 
-function packNotes(pack: RulePack, via: 'host' | 'practice'): ValidationResult[] {
+function packNotes(pack: RulePack, via: 'host' | 'practice', t: Translator): ValidationResult[] {
   const where = via === 'practice'
-    ? 'यह स्थानीय अभ्यास पेज है और पैक फ़ील्ड-नामों से मिलाया गया।'
-    : 'यह पैक इस पोर्टल के लिए बनाया गया है, पर इसके फ़ील्ड-नाम लाइव पेज पर सत्यापित नहीं हैं।';
+    ? t('v.practice')
+    : t('v.host');
   return [{
     ruleId: 'live-testing-unverified',
     fieldId: null,
     severity: 'unchecked',
-    message: `नियम पैक ${pack.id} ${pack.version} (समीक्षा ${pack.reviewed}) का लाइव परीक्षण बाकी है। ${where}`,
-    action: 'इन नतीजों को अंतिम पुष्टि या आवेदन भेजने की अनुमति न मानें।',
+    message: t('v.pack', { id: pack.id, version: pack.version, reviewed: pack.reviewed, where }),
+    action: t('v.packAction'),
     source: pack.id,
   }];
 }
@@ -367,10 +366,11 @@ export function validateWithPack(
   via: 'host' | 'practice',
   input: ValidationInput,
 ): ValidationResult[] {
+  const t = translator(input.locale);
   const results: ValidationResult[] = [];
   {
     const selection = { pack, via };
-    results.push(...packNotes(selection.pack, selection.via));
+    results.push(...packNotes(selection.pack, selection.via, t));
     const today = input.today ?? localToday();
     let unmapped = 0;
     let pinPresent = false;
@@ -386,9 +386,9 @@ export function validateWithPack(
             ruleId: 'required-value',
             fieldId: field.fieldId,
             severity: 'error',
-            message: `${field.label}: पेज ने इसे आवश्यक बताया है और यह अभी खाली है।`,
-            action: isChoice(field) ? 'फ़ील्ड पर जाएँ और विकल्प चुनें।' : 'फ़ील्ड पर जाएँ और भरें।',
-            source: 'पेज का अपना आवश्यक चिह्न',
+            message: t('v.pageRequired', { label: field.label }),
+            action: isChoice(field) ? t('v.choose') : t('v.fill'),
+            source: 'page-required',
           });
         }
         unmapped += 1;
@@ -400,19 +400,19 @@ export function validateWithPack(
       otrPresent ||= rule.meaning === 'nsp-otr';
       ifscPresent ||= rule.meaning === 'ifsc';
       dobPresent ||= rule.meaning === 'date-of-birth';
-      results.push(...requiredCheck(field, rule, input.fields));
-      if (rule.meaning === 'date-of-birth') results.push(...dateCheck(field, rule, today));
-      if (rule.meaning === 'english-name') results.push(...nameCheck(field, rule, input.reference.englishName));
-      results.push(...identifierCheck(field, rule));
-      results.push(...meaningNotes(field, rule));
+      results.push(...requiredCheck(field, rule, input.fields, t));
+      if (rule.meaning === 'date-of-birth') results.push(...dateCheck(field, rule, today, t));
+      if (rule.meaning === 'english-name') results.push(...nameCheck(field, rule, input.reference.englishName, t));
+      results.push(...identifierCheck(field, rule, t));
+      results.push(...meaningNotes(field, rule, t));
     }
     if (unmapped > 0) {
       results.push({
         ruleId: 'unmapped-fields',
         fieldId: null,
         severity: 'unchecked',
-        message: `${unmapped} फ़ील्ड इस नियम पैक में दर्ज नहीं हैं, इसलिए उनकी जाँच नहीं हुई।`,
-        action: 'इन फ़ील्ड को सूची में स्वयं पढ़ें।',
+        message: t('v.unmapped', { count: unmapped }),
+        action: t('v.checkList'),
         source: selection.pack.id,
       });
     }
@@ -421,8 +421,8 @@ export function validateWithPack(
         ruleId: 'pin-district-unchecked',
         fieldId: null,
         severity: 'unchecked',
-        message: 'PIN और जिले का आपस में मेल नहीं जाँचा गया: इसके लिए समीक्षित डाक निर्देशिका नहीं है।',
-        action: 'सही डाक निर्देशिका या अपने पते के दस्तावेज़ से स्वयं मिलान करें।',
+        message: t('v.pinDistrict'),
+        action: t('v.pinDistrictAction'),
         source: null,
       });
     }
@@ -431,8 +431,8 @@ export function validateWithPack(
         ruleId: 'otr-issuance-unchecked',
         fieldId: null,
         severity: 'unchecked',
-        message: 'OTR किसका है और वह जारी हुआ है या नहीं, यह जाँचा नहीं गया। 14 अंक होना पहचान प्रमाणित नहीं करता।',
-        action: 'पोर्टल पर स्वयं पुष्टि करें।',
+        message: t('v.otrIssuance'),
+        action: t('v.confirmPortal'),
         source: 'N1',
       });
     }
@@ -442,8 +442,8 @@ export function validateWithPack(
         ruleId: 'dob-eligibility-unchecked',
         fieldId: null,
         severity: 'unchecked',
-        message: 'जन्म तारीख से आयु या पात्रता नहीं जाँची गई: केवल तारीख की वैधता देखी गई है, कोई न्यूनतम या अधिकतम आयु नहीं मानी गई।',
-        action: 'पात्रता की शर्तें पोर्टल के अपने निर्देशों से स्वयं देखें।',
+        message: t('v.dobEligibility'),
+        action: t('v.readPortal'),
         source: null,
       });
     }
@@ -452,8 +452,8 @@ export function validateWithPack(
         ruleId: 'ifsc-branch-unchecked',
         fieldId: null,
         severity: 'unchecked',
-        message: 'IFSC का रूप ही देखा गया। शाखा, खाता या नाम का मिलान नहीं हुआ।',
-        action: 'बैंक से स्वयं पुष्टि करें।',
+        message: t('v.ifscBranch'),
+        action: t('v.bankAction'),
         source: 'B1',
       });
     }
@@ -461,13 +461,8 @@ export function validateWithPack(
   return results;
 }
 
-const noPackText: Record<Exclude<PackSelection, { pack: RulePack }>['reason'], string> = {
-  'no-fields': 'इस पेज पर कोई पढ़ने योग्य फ़ील्ड नहीं मिला, इसलिए कोई जाँच नहीं हुई। यह किसी फ़ॉर्म की समीक्षा नहीं है।',
-  'no-workflow': 'पोर्टल पहचाना गया, पर यह पेज किसी समीक्षित कार्यप्रवाह से मेल नहीं खाता: उसके पहचान-फ़ील्ड यहाँ नहीं मिले। किसी फ़ील्ड की जाँच नहीं हुई।',
-  'unknown-page': 'इस पेज के लिए कोई समीक्षित नियम पैक नहीं है, इसलिए किसी फ़ील्ड की जाँच नहीं हुई।',
-};
-
 export function validateSnapshot(input: ValidationInput): ValidationResult[] {
+  const t = translator(input.locale);
   const selection = selectRulePack(input.origin, input.fields.map((field) => field.key));
   const results: ValidationResult[] = [];
   if (!input.fields.some((field) => field.status === 'read')) {
@@ -476,8 +471,8 @@ export function validateSnapshot(input: ValidationInput): ValidationResult[] {
       ruleId: 'no-readable-fields',
       fieldId: null,
       severity: 'unchecked',
-      message: 'इस पेज पर कोई लागू फ़ील्ड पढ़ा नहीं गया, इसलिए यह किसी फ़ॉर्म की समीक्षा नहीं है।',
-      action: 'सही फ़ॉर्म पेज खोलकर उसे फिर पढ़ें।',
+      message: t('v.noReadable'),
+      action: t('v.openForm'),
       source: null,
     });
   }
@@ -486,8 +481,8 @@ export function validateSnapshot(input: ValidationInput): ValidationResult[] {
       ruleId: 'no-rule-pack',
       fieldId: null,
       severity: 'unchecked',
-      message: noPackText[selection.reason],
-      action: 'फ़ील्ड सूची पढ़कर जानकारी स्वयं जाँचें।',
+      message: t(selection.reason === 'no-fields' ? 'v.noFields' : selection.reason === 'no-workflow' ? 'v.noWorkflow' : 'v.noPack'),
+      action: t('v.checkList'),
       source: null,
     });
   } else {
@@ -498,8 +493,8 @@ export function validateSnapshot(input: ValidationInput): ValidationResult[] {
         ruleId: 'expected-fields-missing',
         fieldId: null,
         severity: 'unchecked',
-        message: `इस कार्यप्रवाह के ${selection.missing.length} अपेक्षित फ़ील्ड इस पेज पर नहीं मिले, इसलिए उनकी जाँच नहीं हुई: ${selection.missing.map((rule) => rule.key).join(', ')}।`,
-        action: 'पोर्टल पर वे हिस्से स्वयं देखें; यह समीक्षा उन्हें नहीं ढकती।',
+        message: t('v.missing', { count: selection.missing.length, keys: selection.missing.map((rule) => rule.key).join(', ') }),
+        action: t('v.manual'),
         source: selection.pack.id,
       });
     }
@@ -510,8 +505,8 @@ export function validateSnapshot(input: ValidationInput): ValidationResult[] {
       ruleId: 'coverage-gap',
       fieldId: null,
       severity: 'unchecked',
-      message: `${gapText[gap.reason] ?? 'नहीं पढ़ा गया'}: ${gap.label}`,
-      action: 'इस हिस्से को स्वयं जाँचें।',
+      message: t(gap.reason === 'frame' ? 'v.frame' : gap.reason === 'sensitive' ? 'v.sensitive' : gap.reason === 'unsupported-control' ? 'v.unsupported-control' : 'v.gap', { label: gap.label }),
+      action: t('v.manual'),
       source: null,
     });
   }

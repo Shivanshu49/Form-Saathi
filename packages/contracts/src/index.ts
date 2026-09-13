@@ -9,3 +9,4 @@ export type HealthResponse = z.infer<typeof healthResponseSchema>;
 
 export * from './messages.js';
 export * from './api.js';
+export * from './i18n/index.js';

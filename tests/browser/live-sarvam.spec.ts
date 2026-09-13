@@ -78,13 +78,19 @@ async function openPanel(page: Page): Promise<Page> {
     chrome.tts.stop = () => undefined;
   });
   await panel.goto(`chrome-extension://${extensionId}/sidepanel.html?tab=${tabId}`);
+  await panel.getByRole('combobox').first().selectOption('hi');
   await expect(panel.getByRole('status').first()).not.toHaveText('पेज पढ़ा जा रहा है…');
+  for (const selector of ['.form-status details', '.review > details', '.reference', '.fields-disclosure']) {
+    await panel.locator(selector).locator(':scope > summary').click();
+  }
   return panel;
 }
 
 async function saveCredential(panel: Page, credential: string): Promise<void> {
+  const settings = panel.getByRole('button', { name: 'सेटिंग्स', exact: true });
+  if (await settings.getAttribute('aria-expanded') === 'false') await settings.click();
   if (await panel.getByRole('button', { name: 'क्लाउड सुविधा बंद करें' }).count() === 0) {
-    await panel.getByRole('button', { name: 'समझ गया — क्लाउड सुविधा चालू करें' }).click();
+    await panel.getByRole('button', { name: 'समझ गया। क्लाउड सुविधा चालू करें' }).click();
   }
   await panel.getByLabel('पायलट क्रेडेंशियल').fill(credential);
   await panel.getByRole('button', { name: 'क्रेडेंशियल सहेजें' }).click();
@@ -104,7 +110,7 @@ test('live: a fictional spoken date becomes a suggestion the local rules check, 
   const panel = await openPanel(page);
   await panel.getByRole('button', { name: 'जन्म तारीख (अभ्यास में आवश्यक)' }).click();
   await saveCredential(panel, token);
-  const transcript = panel.getByLabel('सुना गया पाठ — ज़रूरत हो तो सुधारें');
+  const transcript = panel.getByLabel('पाठ या टाइप किया उत्तर। भेजने से पहले सुधारें।');
   if (audioFile) {
     const started = Date.now();
     await recordAndSend(panel, 4);
@@ -122,7 +128,7 @@ test('live: a fictional spoken date becomes a suggestion the local rules check, 
   await transcript.fill(AMBIGUOUS);
   let started = Date.now();
   await panel.getByRole('button', { name: 'इस पाठ को समझें' }).click();
-  const clarify = panel.getByText(/^स्पष्ट करें:/);
+  const clarify = panel.locator('.speech-assist').getByText('स्पष्टीकरण चाहिए; कोई मान नहीं सुझाया गया।', { exact: true });
   const suggested = panel.getByText(/^सुझाया गया मान:/);
   await expect(clarify.or(suggested).or(panel.getByRole('button', { name: 'फिर से कोशिश करें' }))).toBeVisible({ timeout: 60_000 });
   observed(`“${AMBIGUOUS}” → ${await clarify.count() > 0 ? 'clarification, no value' : await suggested.count() > 0 ? `SUGGESTION “${await suggested.innerText()}” (a guessed year is a defect)` : 'failure'} in ${Date.now() - started} ms`);
@@ -135,10 +141,10 @@ test('live: a fictional spoken date becomes a suggestion the local rules check, 
   await panel.getByRole('button', { name: 'इस पाठ को समझें' }).click();
   await expect(suggested.or(clarify).or(panel.getByRole('button', { name: 'फिर से कोशिश करें' }))).toBeVisible({ timeout: 60_000 });
   const suggestion = await suggested.count() > 0 ? await suggested.locator('strong').innerText() : null;
-  const check = await panel.getByText(/स्थानीय जाँच में कोई कमी नहीं मिली|सुधार चाहिए:/).first().innerText().catch(() => 'no local check shown');
+  const check = await panel.getByText(/कोई कमी नहीं मिली। पुष्टि नहीं।|सुधार चाहिए:/).first().innerText().catch(() => 'no local check shown');
   observed(`“${UNAMBIGUOUS}” → ${suggestion === null ? 'no suggestion' : `“${suggestion}”`}; ${check}; in ${Date.now() - started} ms`);
   await expect(suggested).toBeVisible();
-  await expect(panel.getByText('यह सुझाव है, निर्णय नहीं। इसे फ़ॉर्म में आप स्वयं भरेंगे; पैनल कुछ नहीं भरता।')).toBeVisible();
+  await expect(panel.getByText('यह सुझाव है। इसे फ़ॉर्म में आप स्वयं भरेंगे; पैनल कुछ नहीं भरता।')).toBeVisible();
   // Nothing was written into the page.
   expect(await page.locator('#eci-dob').inputValue()).toBe('31/02/2000');
   await panel.close();
@@ -152,10 +158,10 @@ test('live: a field meaning arrives as an unconfirmed guess and help audio as a 
   await saveCredential(panel, token);
   let started = Date.now();
   await panel.getByRole('button', { name: 'इस फ़ील्ड का अर्थ पूछें' }).click();
-  const guess = panel.getByText(/^AI का अनुमान:/);
-  const unclear = panel.getByText(/^सेवा को अर्थ स्पष्ट नहीं लगा:/);
-  await expect(guess.or(unclear)).toBeVisible({ timeout: 60_000 });
-  observed(`field meaning → ${await guess.count() > 0 ? await guess.innerText() : 'service found the meaning unclear'} in ${Date.now() - started} ms`);
+  const guess = panel.locator('.speech-assist').getByText('सेवा का समझाया अर्थ', { exact: true });
+  const unclear = panel.locator('.speech-assist').getByText('सेवा को इस फ़ील्ड का अर्थ स्पष्ट नहीं लगा।', { exact: true });
+  await expect(guess).toBeVisible({ timeout: 60_000 });
+  observed(`field meaning → ${await unclear.count() > 0 ? 'service found the meaning unclear' : 'unconfirmed explanation received'} in ${Date.now() - started} ms`);
   await expect(panel.getByText(/यह अनुमान है, पोर्टल का नियम नहीं/)).toBeVisible();
 
   started = Date.now();
@@ -187,7 +193,7 @@ test('live: an invalid credential fails usably and a valid one recovers without 
   await panel.getByRole('button', { name: 'पिछला फ़ील्ड', exact: true }).click();
   await saveCredential(panel, token);
   await panel.getByRole('button', { name: 'इस फ़ील्ड का अर्थ पूछें' }).click();
-  await expect(panel.getByText(/^AI का अनुमान:/).or(panel.getByText(/^सेवा को अर्थ स्पष्ट नहीं लगा:/))).toBeVisible({ timeout: 60_000 });
+  await expect(panel.locator('.speech-assist').getByText('सेवा का समझाया अर्थ', { exact: true })).toBeVisible({ timeout: 60_000 });
   observed('valid credential → the same request succeeds afterwards');
   await panel.close();
   await page.close();

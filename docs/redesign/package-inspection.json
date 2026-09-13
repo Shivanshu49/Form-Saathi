@@ -1,0 +1,48 @@
+{
+  "archive": "apps/extension/.output/form-saathiextension-0.1.0-chrome.zip",
+  "bytes": 241151,
+  "sha256": "330e594f598049489e9a6455d15cf3e7bd743eb7afe1f38594e468b3b0c4fe43",
+  "files": 11,
+  "matches_build": true,
+  "manifest": {
+    "manifest_version": 3,
+    "name": "Form Saathi",
+    "description": "Accessible form navigation and local review. Development version.",
+    "version": "0.1.0",
+    "icons": {
+      "16": "icon/16.png",
+      "32": "icon/32.png",
+      "48": "icon/48.png",
+      "96": "icon/96.png",
+      "128": "icon/128.png"
+    },
+    "minimum_chrome_version": "116",
+    "permissions": [
+      "sidePanel",
+      "activeTab",
+      "scripting",
+      "tts",
+      "storage"
+    ],
+    "host_permissions": [
+      "http://127.0.0.1:3000/*"
+    ],
+    "action": {
+      "default_title": "Form Saathi"
+    },
+    "commands": {
+      "_execute_action": {
+        "suggested_key": {
+          "default": "Alt+Shift+F"
+        }
+      }
+    },
+    "background": {
+      "service_worker": "background.js"
+    },
+    "side_panel": {
+      "default_path": "sidepanel.html"
+    }
+  },
+  "matches_browser_tested_build": true
+}

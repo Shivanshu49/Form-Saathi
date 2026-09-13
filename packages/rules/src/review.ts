@@ -9,6 +9,10 @@ export type ReviewedField = {
   label: string;
   /** Instructions the page attaches to the field. */
   description: string;
+  lang?: string | undefined;
+  labelLang?: string | undefined;
+  groupLang?: string | undefined;
+  instructions?: readonly { text: string; lang: string }[] | undefined;
   group: string;
   kind: string;
   status: string;
@@ -49,6 +53,7 @@ export function snapshotRevision(
   return JSON.stringify([
     fields.map((field) => [
       field.key, field.label, field.description, field.group, field.kind, field.status,
+      field.lang ?? null, field.labelLang ?? null, field.groupLang ?? null, field.instructions ?? null,
       field.required, field.readOnly, field.value,
       field.options.map((option) => [option.value, option.label, option.selected]),
       [

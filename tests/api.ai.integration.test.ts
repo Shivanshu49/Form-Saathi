@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import type { AddressInfo } from 'node:net';
 import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
-import { apiErrorSchema, speechHelpResponseSchema, transcribeResponseSchema } from '@form-saathi/contracts';
+import { apiErrorSchema, speechHelpResponseSchema, transcribeResponseSchema, translator } from '@form-saathi/contracts';
 import { AppModule } from '../apps/api/dist/app.module.js';
 import { mintPilotToken } from '../apps/api/dist/pilot-token.js';
 
@@ -89,9 +89,10 @@ async function post(path: string, body: unknown, auth: string | null = token, si
   });
 }
 
-async function postAudio(bytes: Buffer, type: string, auth: string | null = token, signal?: AbortSignal): Promise<Response> {
+async function postAudio(bytes: Buffer, type: string, auth: string | null = token, signal?: AbortSignal, locale?: string): Promise<Response> {
   const form = new FormData();
   form.append('audio', new Blob([new Uint8Array(bytes)], { type }), 'recording.wav');
+  if (locale) form.append('locale', locale);
   return fetch(`${origin}/v1/speech/transcribe`, {
     method: 'POST',
     headers: auth ? { authorization: `Bearer ${auth}` } : {},
@@ -224,6 +225,40 @@ describe('request validation', () => {
   });
 });
 
+describe('explicit cloud languages', () => {
+  it('sends the selected supported language to transcription, interpretation and help speech', async () => {
+    for (const locale of ['en', 'hi'] as const) {
+      program('/speech-to-text', json({ transcript: '226001', language_code: `${locale}-IN` }));
+      expect((await postAudio(wav(), 'audio/wav', token, undefined, locale)).status).toBe(200);
+      expect(received.at(-1)?.body).toContain(`name="language_code"\r\n\r\n${locale}-IN`);
+      for (const path of ['/v1/fields/interpret', '/v1/values/interpret']) {
+        program('/v1/chat/completions', chatReply({ outcome: 'unknown', explanation: 'Check the source.' }));
+        expect((await post(path, { locale, field, ...(path.includes('values') ? { transcript: '226001' } : {}) })).status).toBe(200);
+        const sent = sentJson<{ messages: { role: string; content: string }[] }>();
+        expect(sent.messages[0]?.content).toContain(`Write explanations in ${locale === 'hi' ? 'Hindi' : 'English'}`);
+        expect(sent.messages[1]?.content).toContain(field.label);
+      }
+      program('/text-to-speech', json({ audios: [Buffer.from('fake audio').toString('base64')] }));
+      const response = await post('/v1/speech/help', { topic: 'privacy', locale });
+      expect(response.status).toBe(200);
+      const sent = sentJson<{ language_code: string; text: string; speaker: string }>();
+      expect(sent.language_code).toBe(`${locale}-IN`);
+      expect(sent.speaker).toBe('shubh');
+      expect(sent.text).toBe(translator(locale)('help.text.privacy'));
+    }
+  });
+  it('rejects unsupported cloud locales at every boundary before reaching a provider', async () => {
+    for (const locale of ['es', 'fr', 'ar']) {
+      expect((await postAudio(wav(), 'audio/wav', token, undefined, locale)).status).toBe(400);
+      for (const [path, body] of [
+        ['/v1/fields/interpret', { field }], ['/v1/values/interpret', { field, transcript: '226001' }],
+        ['/v1/speech/help', { topic: 'privacy' }],
+      ] as const) expect((await post(path, { ...body, locale })).status).toBe(400);
+    }
+    expect(received).toEqual([]);
+  });
+});
+
 describe('audio uploads', () => {
   it('transcribes a supported recording and keeps nothing on disk', async () => {
     program('/speech-to-text', json({ request_id: 'r1', transcript: 'दो दो छह शून्य शून्य एक', language_code: 'hi-IN' }));
@@ -241,7 +276,7 @@ describe('audio uploads', () => {
     expect(upload?.path).toBe('/speech-to-text');
     expect(upload?.headers['api-subscription-key']).toBe(PROVIDER_KEY);
     expect(upload?.body).toContain('saaras:v3');
-    expect(upload?.body).toContain('hi-IN');
+    expect(upload?.body).toContain('en-IN');
   });
 
   it('refuses a missing file, an unsupported type, a mislabelled file and an oversized upload', async () => {

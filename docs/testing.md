@@ -935,3 +935,14 @@ What was prepared, and where:
   note (own hostname, because the built pages use root-relative asset paths).
   The extension test now derives the expected host permission from
   `apps/extension/config.ts`, so changing the origin is one edit.
+
+
+## English-first redesign verification (2026-09-13)
+
+See [the redesign delivery](redesign/README.md#verification) for the current tree's
+verification and screenshots. Typecheck and lint pass; 108 unit/integration tests
+and 56 browser tests pass. The browser suite includes complete five-language
+website checks, installed-extension localization, source-language preservation,
+Arabic directionality, 320px layouts, 200% text resizing and automated axe checks.
+Native NVDA, docked Chrome UI, real microphone and live provider/portal checks
+remain pending. Earlier results in this file remain historical audit evidence.

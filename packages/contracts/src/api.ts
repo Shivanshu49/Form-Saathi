@@ -5,8 +5,9 @@ import { z } from 'zod';
 // output. A reply is a suggestion to be confirmed, never an instruction, a
 // selector, a browser action or a validation rule.
 
-/** Hindi is the only interface language this stage supports. */
-export const supportedLanguage = 'hi-IN' as const;
+// Cloud support is deliberately narrower than interface localization.
+export const cloudLocaleSchema = z.enum(['en', 'hi']).default('en');
+export const transcribeRequestSchema = z.strictObject({ locale: cloudLocaleSchema });
 
 /**
  * A display vocabulary for explaining a field to a person. It is deliberately
@@ -33,6 +34,7 @@ export const fieldContextSchema = z.strictObject({
 });
 
 export const fieldInterpretRequestSchema = z.strictObject({
+  locale: cloudLocaleSchema,
   field: fieldContextSchema,
 });
 
@@ -55,6 +57,7 @@ export const fieldInterpretResponseSchema = z.strictObject({
 export const valueInterpretRequestSchema = z.strictObject({
   /** What the person said, after they approved sending it. */
   transcript: z.string().trim().min(1).max(1000),
+  locale: cloudLocaleSchema,
   field: fieldContextSchema,
 });
 
@@ -81,7 +84,7 @@ export const transcribeResponseSchema = z.strictObject({
 /** Generic help only: the audio never carries form values or page text. */
 export const helpTopicSchema = z.enum(['navigation', 'review', 'speech-consent', 'privacy']);
 
-export const speechHelpRequestSchema = z.strictObject({ topic: helpTopicSchema });
+export const speechHelpRequestSchema = z.strictObject({ topic: helpTopicSchema, locale: cloudLocaleSchema });
 
 export const speechHelpResponseSchema = z.strictObject({
   topic: helpTopicSchema,

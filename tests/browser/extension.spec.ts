@@ -46,19 +46,25 @@ test('the installed extension opens its panel page and checks service accessibly
 
     // Opened without a tab: the panel offers no form actions until it is activated.
     await page.goto(`chrome-extension://${extensionId}/sidepanel.html`);
-    await expect(page.getByRole('heading', { name: 'फ़ॉर्म साथी', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Form Saathi', exact: true })).toBeVisible();
     await expect(page.getByRole('status').first())
-      .toContainText('यह पैनल किसी टैब से नहीं जुड़ा है।');
-    await expect(page.getByRole('button', { name: 'फ़ॉर्म फिर पढ़ें' })).toHaveCount(0);
-    await expect(page.locator('html')).toHaveAttribute('lang', 'hi');
-    await expect(page.getByText('वास्तविक फ़ॉर्म पर परीक्षण बाकी है।')).toHaveCount(2);
+      .toContainText('Activate Form Saathi from the toolbar');
+    await expect(page.getByRole('button', { name: 'Rescan' })).toHaveCount(0);
+    await expect(page.locator('html')).toHaveAttribute('lang', 'en');
+    await expect(page.getByRole('combobox', { name: 'Interface language' })).toHaveValue('en');
     expect(healthRequests).toEqual([]);
 
-    const button = page.getByRole('button', { name: 'सेवा की स्थिति जाँचें' });
+    const settings = page.getByRole('button', { name: 'Settings', exact: true });
     await page.keyboard.press('Tab');
+    await expect(page.getByRole('combobox')).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(settings).toBeFocused();
+    await page.keyboard.press('Enter');
+    const button = page.getByRole('button', { name: 'Check service status' });
+    await button.focus();
     await expect(button).toBeFocused();
     await page.keyboard.press('Enter');
-    await expect(page.getByRole('status').last()).toHaveText('सेवा उपलब्ध है।');
+    await expect(page.locator('#service-status')).toHaveText('Service available.');
     await expect(button).toBeFocused();
     expect(healthRequests).toEqual(['GET']);
 
@@ -84,14 +90,14 @@ test('the installed extension opens its panel page and checks service accessibly
     // Both an invalid contract and a disconnected API must be recoverable.
     await page.route('**/health', (route) => route.fulfill({ json: { status: 'ok' } }));
     await button.press('Enter');
-    await expect(page.getByRole('status').last()).toContainText('सेवा से संपर्क नहीं हो पाया');
+    await expect(page.locator('#service-status')).toContainText('Could not reach the service');
     await page.unroute('**/health');
     await page.route('**/health', (route) => route.abort());
     await button.press('Enter');
-    await expect(page.getByRole('status').last()).toContainText('सेवा से संपर्क नहीं हो पाया');
+    await expect(page.locator('#service-status')).toContainText('Could not reach the service');
     await page.unroute('**/health');
     await button.press('Enter');
-    await expect(page.getByRole('status').last()).toHaveText('सेवा उपलब्ध है।');
+    await expect(page.locator('#service-status')).toHaveText('Service available.');
     await expect(button).toBeFocused();
     expect(errors).toEqual([]);
   } finally {

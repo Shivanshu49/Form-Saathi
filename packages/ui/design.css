@@ -1,0 +1,69 @@
+:root {
+  color-scheme: light;
+  --paper: #f8f8f5;
+  --surface: #ffffff;
+  --ink: #242b33;
+  --muted: #59636f;
+  --line: #d8dde1;
+  --accent: #245bb0;
+  --accent-dark: #174481;
+  --soft-blue: #edf3fc;
+  --error: #a33b2f;
+  --radius: 6px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Nirmala UI", "Noto Sans Arabic", sans-serif;
+  font-size: 16px;
+  line-height: 1.55;
+  color: var(--ink);
+  background: var(--paper);
+}
+* { box-sizing: border-box; }
+body { margin: 0; }
+h1,h2,h3,p,ul,ol,dl,dd { margin: 0; }
+h1,h2,h3 { line-height: 1.3; text-wrap: balance; }
+h2 { font-size: 1.05rem; font-weight: 650; }
+h3 { font-size: 1rem; font-weight: 650; }
+p,li,dd,h1,h2,h3,a,label,button,summary,bdi { overflow-wrap: anywhere; }
+ul,ol { padding-inline-start: 1.4rem; }
+a { color: var(--accent); text-underline-offset: .2em; }
+a:hover { text-decoration-thickness: 2px; }
+button,input,select,textarea { font: inherit; color: inherit; }
+input,select,textarea { min-height: 44px; max-width: 100%; border: 1px solid #8b959f; border-radius: var(--radius); background: var(--surface); padding: 10px 12px; }
+input,textarea { width: 100%; }
+textarea { resize: vertical; }
+label { font-weight: 600; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+[tabindex="-1"]:focus { outline: 3px solid var(--accent); outline-offset: 3px; }
+button,summary,select { cursor: pointer; }
+.button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 10px 14px; border: 1px solid #aab3bc; border-radius: var(--radius); background: var(--surface); color: var(--ink); font-weight: 600; line-height: 1.4; text-decoration: none; text-align: center; }
+.button:hover { background: #eff1f3; border-color: #7d8b99; }
+.button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.button.primary:hover { background: var(--accent-dark); }
+.button[aria-disabled="true"] { color: #646d76; background: #f0f1f2; cursor: default; }
+.button.compact { padding-inline: 10px; font-size: .875rem; }
+.icon { width: 20px; height: 20px; flex: none; }
+.brand { display: flex; align-items: center; gap: 9px; font-size: 1.15rem; font-weight: 650; text-decoration: none; color: var(--ink); }
+.brand .icon { width: 28px; height: 28px; color: var(--accent); }
+.language-control select { font-size: .875rem; font-weight: 500; width: 100%; }
+.stack > * + * { margin-block-start: 12px; }
+.section-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.small { font-size: .875rem; }
+.muted { color: var(--muted); }
+.eyebrow { font-size: .75rem; font-weight: 600; color: var(--muted); letter-spacing: .03em; }
+summary { min-height: 44px; padding-block: 10px; font-weight: 600; font-size: .9rem; }
+.detail-body { padding-block: 12px; }
+.technical,code,kbd { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: .875em; direction: ltr; unicode-bidi: isolate; }
+.issue-list,.field-list { list-style: none; padding: 0; }
+.issue { padding: 12px; border-inline-start: 3px solid var(--line); background: #f3f4f5; }
+.issue + .issue { margin-block-start: 10px; }
+.issue p + p { margin-block-start: 6px; }
+.issue.error { border-inline-start-color: var(--error); }
+.issue.needs-confirmation { border-inline-start-color: #906329; }
+.field-list > li { padding-block: 14px; border-block-end: 1px solid var(--line); }
+.field-link { width: 100%; justify-content: start; text-align: start; }
+.field-link[aria-current="true"] { border-color: var(--accent); background: var(--soft-blue); }
+[dir="rtl"] .directional { transform: scaleX(-1); }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+[hidden] { display: none !important; }
+@media (prefers-reduced-motion: reduce) { *,*::before,*::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
+@media (forced-colors: active) { .button,.issue,.field-value { border: 1px solid CanvasText; } }

@@ -183,3 +183,12 @@ therefore corresponds to that commit and to no uncommitted state.
 ## Demonstration
 
 See [demo.md](demo.md) for the reproducible five-minute script.
+
+
+## Redesign working branch (2026-09-13)
+
+The English-first redesign on `redesign-english-first` has a separately rebuilt
+pilot ZIP. See [the redesign report](redesign/README.md#verification) for its
+SHA-256, byte-for-byte comparison with the tested extension, screenshots and
+verification. Earlier package hashes above identify their historical builds.
+No deployment or Web Store publication was performed by the redesign.

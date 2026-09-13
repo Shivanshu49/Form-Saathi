@@ -38,6 +38,9 @@ export const formFieldSchema = z.strictObject({
   group: z.string(),
   /** The control's effective language tag, so a screen reader can switch voice. */
   lang: z.string(),
+  labelLang: z.string().optional(),
+  groupLang: z.string().optional(),
+  instructions: z.array(z.strictObject({ text: z.string(), lang: z.string() })).optional(),
   /** `inactive` covers hidden or disabled conditional fields; their value is not read. */
   status: z.enum(['read', 'inactive']),
   required: z.boolean(),
@@ -62,6 +65,7 @@ export const formSnapshotSchema = z.strictObject({
   sequence: z.number().int().nonnegative(),
   origin: z.string(),
   title: z.string(),
+  lang: z.string().optional(),
   fields: z.array(formFieldSchema),
   gaps: z.array(coverageGapSchema),
 });
